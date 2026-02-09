@@ -8,8 +8,9 @@
 #include "shell.h"
 #include "jobs.h"
 #include "trap.h"
+#include "options.h"
 #include "compat.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 
 #include <stdio.h>
@@ -27,8 +28,11 @@ jobs_init(void)
 			/* May already be group leader */
 		}
 		/* Take control of the terminal */
-		if (sh.terminal_fd >= 0)
-			tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
+		if (sh.terminal_fd >= 0) {
+			if (tcsetpgrp(sh.terminal_fd, sh.shell_pgid) < 0) {
+				perror("tcsetpgrp");
+			}
+		}
 
 		/* Ignore job control signals in the shell */
 		sh_signal(SIGTSTP, SIG_IGN);

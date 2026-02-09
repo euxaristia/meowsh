@@ -7,7 +7,7 @@
 
 #include "shell.h"
 #include "options.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 
 #include <stdio.h>

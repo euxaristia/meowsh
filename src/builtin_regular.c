@@ -13,9 +13,10 @@
 #include "jobs.h"
 #include "trap.h"
 #include "options.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
+#include "lineedit.h"
 
 #include <sys/stat.h>
 #include <sys/resource.h>
@@ -394,6 +395,15 @@ builtin_getopts(int argc, char **argv)
 		}
 	}
 
+	return 0;
+}
+
+int
+builtin_history(int argc, char **argv)
+{
+	(void)argc;
+	(void)argv;
+	lineedit_print_history();
 	return 0;
 }
 

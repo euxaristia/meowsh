@@ -8,7 +8,7 @@
 #include "shell.h"
 #include "input.h"
 #include "options.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
 #include "compat.h"
@@ -19,6 +19,7 @@
 #include "trap.h"
 #include "jobs.h"
 #include "alias.h"
+#include "lineedit.h"
 
 #include <locale.h>
 
@@ -49,6 +50,7 @@ shell_init(void)
 	var_init();
 	trap_init();
 	alias_init();
+	lineedit_init();
 }
 
 static void
@@ -182,7 +184,7 @@ main(int argc, char **argv)
 
 	if (optind < argc) {
 		/* Script file mode */
-		const char *script = argv[optind];
+		char *script = argv[optind];
 		sh.argv0 = script;
 
 		if (optind + 1 < argc)
@@ -202,6 +204,11 @@ main(int argc, char **argv)
 
 	setup_interactive();
 	source_profile();
+
+	if (sh.interactive) {
+		fprintf(stderr, "meowsh — welcome! (type 'exit' to quit)\n");
+	}
+
 	input_push_fd(STDIN_FILENO);
 	main_loop();
 	input_pop();

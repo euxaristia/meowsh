@@ -6,7 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "shell.h"
-#include "glob.h"
+#include "sh_glob.h"
 #include "memalloc.h"
 
 #include <glob.h>

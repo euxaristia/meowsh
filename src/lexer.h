@@ -29,6 +29,10 @@ token_type_t reserved_word(const char *s);
 /* Read a here-document body */
 char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted);
 
+/* Queue a heredoc to be read after newline */
+void queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
+    int quoted);
+
 /* Enable/disable alias expansion in the lexer */
 void lexer_set_alias(int enable);
 

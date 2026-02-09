@@ -47,6 +47,7 @@ int builtin_fc(int argc, char **argv);
 int builtin_fg(int argc, char **argv);
 int builtin_getopts(int argc, char **argv);
 int builtin_hash(int argc, char **argv);
+int builtin_history(int argc, char **argv);
 int builtin_jobs(int argc, char **argv);
 int builtin_kill(int argc, char **argv);
 int builtin_newgrp(int argc, char **argv);

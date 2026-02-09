@@ -13,7 +13,7 @@
 #include "builtin.h"
 #include "jobs.h"
 #include "trap.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
 #include "compat.h"
@@ -23,6 +23,7 @@
 
 #include <string.h>
 #include <sys/stat.h>
+#include <fnmatch.h>
 
 /* Command hash table lookup/insert */
 static const char *
@@ -419,6 +420,9 @@ exec_simple_cmd(struct node *n, int flags)
 
 	case CMD_EXTERNAL:
 		{
+			/* DEBUG: Trace execution */
+			/* fprintf(stderr, "[DEBUG] Executing external: %s\n", entry.u.path); */
+			
 			pid_t pid = fork();
 			if (pid < 0) {
 				sh_errorf("fork");
@@ -440,25 +444,33 @@ exec_simple_cmd(struct node *n, int flags)
 
 				{
 					char **envp = var_environ();
+					/* fprintf(stderr, "[DEBUG] Child execve: %s\n", entry.u.path); */
 					execve(entry.u.path, argv, envp);
 					sh_errorf("%s", argv[0]);
 					_exit(errno == ENOENT ? 127 : 126);
 				}
 			} else {
 				/* Parent */
+				/* fprintf(stderr, "[DEBUG] Parent waiting for pid %d\n", pid); */
 				if (flags & EXEC_BG) {
 					sh.last_bg_pid = pid;
 					status = 0;
 				} else {
 					int wstatus;
-					while (waitpid(pid, &wstatus, 0) < 0) {
+					while (waitpid(pid, &wstatus, WUNTRACED) < 0) {
 						if (errno != EINTR)
 							break;
 					}
-					if (WIFEXITED(wstatus))
+					if (WIFEXITED(wstatus)) {
 						status = WEXITSTATUS(wstatus);
-					else if (WIFSIGNALED(wstatus))
+					} else if (WIFSIGNALED(wstatus)) {
 						status = 128 + WTERMSIG(wstatus);
+					} else if (WIFSTOPPED(wstatus)) {
+						status = 128 + WSTOPSIG(wstatus);
+						fprintf(stderr, "\n[Stopped] %d\n", pid);
+						/* We should really register this as a job */
+					}
+					/* fprintf(stderr, "[DEBUG] Child finished, status=%d\n", status); */
 				}
 			}
 			free(entry.u.path);

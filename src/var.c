@@ -7,7 +7,8 @@
 
 #include "shell.h"
 #include "var.h"
-#include "error.h"
+#include "options.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
 
@@ -25,6 +26,9 @@ var_init(void)
 
 	/* Set default IFS */
 	var_set("IFS", " \t\n", 0);
+
+	/* Set default PS1 */
+	var_set("PS1", "meowsh % ", 0);
 
 	/* Set PPID */
 	snprintf(buf, sizeof(buf), "%ld", (long)getppid());

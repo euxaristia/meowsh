@@ -6,7 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "memalloc.h"
-#include "error.h"
+#include "sh_error.h"
 
 #include <stdlib.h>
 #include <string.h>

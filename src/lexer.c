@@ -8,7 +8,7 @@
 #include "shell.h"
 #include "lexer.h"
 #include "input.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
 #include "alias.h"
@@ -207,7 +207,7 @@ read_pending_heredocs(void)
 }
 
 /* Queue a heredoc to be read after newline */
-static void
+void
 queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
     int quoted)
 {

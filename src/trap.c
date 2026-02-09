@@ -11,7 +11,7 @@
 #include "parser.h"
 #include "input.h"
 #include "compat.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 
 #include <string.h>
@@ -78,8 +78,10 @@ trap_handler(int sig)
 void
 trap_init(void)
 {
+	int i;
 	memset(sh.traps, 0, sizeof(sh.traps));
-	memset(sh.trap_pending, 0, sizeof(sh.trap_pending));
+	for (i = 0; i < NSIG; i++)
+		sh.trap_pending[i] = 0;
 	sh.any_trap_pending = 0;
 
 	/* Default SIGINT handling for interactive shells */

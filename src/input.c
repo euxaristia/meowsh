@@ -7,8 +7,10 @@
 
 #include "shell.h"
 #include "input.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
+#include "mystring.h"
+#include "lineedit.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -116,6 +118,18 @@ input_refill(struct input_source *is)
 
 	switch (is->type) {
 	case INPUT_FD:
+		if (sh.interactive && is->u.fd == STDIN_FILENO) {
+			char *line = lineedit_read(NULL);
+			if (!line) {
+				is->eof = 1;
+				return -1;
+			}
+			free(is->buf);
+			is->buf = line;
+			is->buflen = strlen(line);
+			is->bufpos = 0;
+			return 0;
+		}
 		n = read(is->u.fd, is->buf, INPUT_BUFSZ);
 		if (n <= 0) {
 			is->eof = 1;
@@ -192,24 +206,31 @@ input_ungetc(int c)
 char *
 input_readline(const char *prompt)
 {
-	struct strbuf sb = STRBUF_INIT;
-	int c;
-
-	if (prompt && sh.interactive) {
-		fputs(prompt, stderr);
-		fflush(stderr);
+	if (sh.interactive && sh.input && sh.input->type == INPUT_FD &&
+	    sh.input->u.fd == STDIN_FILENO) {
+		return lineedit_read(prompt);
 	}
 
-	for (;;) {
-		c = input_getc();
-		if (c < 0) {
-			if (sb.len > 0)
-				return strbuf_detach(&sb);
-			strbuf_free(&sb);
-			return NULL;
+	{
+		struct strbuf sb = STRBUF_INIT;
+		int c;
+
+		if (prompt && sh.interactive) {
+			fputs(prompt, stderr);
+			fflush(stderr);
 		}
-		strbuf_addch(&sb, (char)c);
-		if (c == '\n')
-			return strbuf_detach(&sb);
+
+		for (;;) {
+			c = input_getc();
+			if (c < 0) {
+				if (sb.len > 0)
+					return strbuf_detach(&sb);
+				strbuf_free(&sb);
+				return NULL;
+			}
+			strbuf_addch(&sb, (char)c);
+			if (c == '\n')
+				return strbuf_detach(&sb);
+		}
 	}
 }

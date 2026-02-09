@@ -8,7 +8,8 @@
 #include "shell.h"
 #include "redir.h"
 #include "expand.h"
-#include "error.h"
+#include "options.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "compat.h"
 

@@ -13,7 +13,7 @@
 #include "redir.h"
 #include "trap.h"
 #include "options.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
 #include "input.h"

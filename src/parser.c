@@ -22,7 +22,7 @@
 #include "parser.h"
 #include "lexer.h"
 #include "ast.h"
-#include "error.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
 
@@ -33,7 +33,7 @@
 
 static struct token *curtok;
 
-static struct node *p_list(void);
+static struct node *p_list(int top_level);
 static struct node *p_and_or(void);
 static struct node *p_pipeline(void);
 static struct node *p_command(void);
@@ -287,10 +287,10 @@ p_if_clause(void)
 	struct redirect *redirs;
 
 	skip_newlines();
-	cond = p_list();
+	cond = p_list(0);
 	expect(TOK_THEN);
 	skip_newlines();
-	then_body = p_list();
+	then_body = p_list(0);
 
 	if (accept(TOK_ELIF)) {
 		else_body = p_if_clause();
@@ -299,7 +299,7 @@ p_if_clause(void)
 
 	if (accept(TOK_ELSE)) {
 		skip_newlines();
-		else_body = p_list();
+		else_body = p_list(0);
 	}
 
 	expect(TOK_FI);
@@ -314,10 +314,10 @@ p_while_clause(void)
 	struct redirect *redirs;
 
 	skip_newlines();
-	cond = p_list();
+	cond = p_list(0);
 	expect(TOK_DO);
 	skip_newlines();
-	body = p_list();
+	body = p_list(0);
 	expect(TOK_DONE);
 	redirs = p_redirect_list();
 	return ast_while(cond, body, redirs);
@@ -330,10 +330,10 @@ p_until_clause(void)
 	struct redirect *redirs;
 
 	skip_newlines();
-	cond = p_list();
+	cond = p_list(0);
 	expect(TOK_DO);
 	skip_newlines();
-	body = p_list();
+	body = p_list(0);
 	expect(TOK_DONE);
 	redirs = p_redirect_list();
 	return ast_until(cond, body, redirs);
@@ -367,7 +367,7 @@ p_for_clause(void)
 
 	expect(TOK_DO);
 	skip_newlines();
-	body = p_list();
+	body = p_list(0);
 	expect(TOK_DONE);
 	redirs = p_redirect_list();
 	return ast_for(var, words, has_in, body, redirs);
@@ -401,7 +401,7 @@ p_case_clause(void)
 		skip_newlines();
 
 		if (peek_type() != TOK_DSEMI && peek_type() != TOK_ESAC)
-			body = p_list();
+			body = p_list(0);
 
 		item = ast_case_item(patterns, body);
 		if (last_item)
@@ -427,7 +427,7 @@ p_brace_group(void)
 	struct redirect *redirs;
 
 	skip_newlines();
-	body = p_list();
+	body = p_list(0);
 	expect(TOK_RBRACE);
 	redirs = p_redirect_list();
 	return ast_brace_group(body, redirs);
@@ -440,7 +440,7 @@ p_subshell(void)
 	struct redirect *redirs;
 
 	skip_newlines();
-	body = p_list();
+	body = p_list(0);
 	expect(TOK_RPAREN);
 	redirs = p_redirect_list();
 	return ast_subshell(body, redirs);
@@ -600,7 +600,7 @@ p_and_or(void)
 }
 
 static struct node *
-p_list(void)
+p_list(int top_level)
 {
 	struct node *items[MAX_LIST];
 	connector_t conns[MAX_LIST];
@@ -623,6 +623,7 @@ p_list(void)
 		else if (accept(TOK_AMP))
 			sep = CONN_AMP;
 		else if (accept(TOK_NEWLINE)) {
+			if (top_level) break;
 			sep = CONN_SEMI;
 			skip_newlines();
 			if (!is_command_start(peek_type()))
@@ -668,8 +669,11 @@ parse_command(const char *ps1, const char *ps2)
 		fflush(stderr);
 	}
 
-	skip_newlines();
+	if (peek_type() == TOK_NEWLINE) {
+		next_token();
+		return NULL;
+	}
 	if (peek_type() == TOK_EOF)
 		return NULL;
-	return p_list();
+	return p_list(1);
 }

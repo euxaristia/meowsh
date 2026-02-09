@@ -37,6 +37,7 @@ static const struct builtin_entry builtins[] = {
 	{ "fg",       builtin_fg,       0 },
 	{ "getopts",  builtin_getopts,  0 },
 	{ "hash",     builtin_hash,     0 },
+	{ "history",  builtin_history,  0 },
 	{ "jobs",     builtin_jobs,     0 },
 	{ "kill",     builtin_kill,     0 },
 	{ "newgrp",   builtin_newgrp,   0 },

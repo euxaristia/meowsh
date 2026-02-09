@@ -12,7 +12,7 @@
 #include "shell.h"
 #include "arith.h"
 #include "var.h"
-#include "error.h"
+#include "sh_error.h"
 #include "mystring.h"
 
 #include <ctype.h>

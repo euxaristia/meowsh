@@ -20,8 +20,13 @@
 #include <limits.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <termios.h>
 
 #include "types.h"
+
+#ifndef NSIG
+#define NSIG 64
+#endif
 
 /* ---- Forward declarations ---- */
 struct job;

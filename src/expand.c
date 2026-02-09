@@ -17,15 +17,21 @@
 #include "var.h"
 #include "arith.h"
 #include "field.h"
-#include "glob.h"
-#include "error.h"
+#include "sh_glob.h"
+#include "sh_error.h"
 #include "memalloc.h"
 #include "mystring.h"
+#include "options.h"
+#include "input.h"
+#include "parser.h"
+#include "exec.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/wait.h>
+#include <pwd.h>
+#include <fnmatch.h>
 
 /* Internal expand state */
 struct expand_ctx {

@@ -6,7 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "shell.h"
-#include "error.h"
+#include "sh_error.h"
 
 #include <stdarg.h>
 #include <stdio.h>
