@@ -124,6 +124,9 @@ struct shell_state {
 
 	/* Line number */
 	int lineno;
+
+	/* History */
+	char *history_file;
 };
 
 extern struct shell_state sh;

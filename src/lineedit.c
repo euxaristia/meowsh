@@ -76,6 +76,27 @@ disable_raw_mode(int fd)
 	}
 }
 
+static void
+refresh_line(int fd, struct strbuf *sb, int pos)
+{
+	/* Write from cursor to end */
+	if (sb->buf && pos < (int)sb->len) {
+		write(fd, sb->buf + pos, sb->len - pos);
+	}
+
+	/* Clear to end of line */
+	write(fd, "\x1b[K", 3);
+
+	/* Move cursor back to pos */
+	/* We just printed (len - pos) chars */
+	{
+		int i;
+		for (i = 0; i < (int)sb->len - pos; i++) {
+			write(fd, "\b", 1);
+		}
+	}
+}
+
 char *
 lineedit_read(const char *prompt)
 {
@@ -112,9 +133,10 @@ lineedit_read(const char *prompt)
 		} else if (c == 127 || c == 8) { /* Backspace */
 			if (pos > 0) {
 				pos--;
+				memmove(sb.buf + pos, sb.buf + pos + 1, sb.len - pos - 1);
 				sb.len--;
-				if (sb.buf) sb.buf[sb.len] = '\0';
-				write(fd, "\b \b", 3);
+				write(fd, "\b", 1);
+				refresh_line(fd, &sb, pos);
 			}
 		} else if (c == 4) { /* Ctrl-D */
 			if (sb.len == 0) {
@@ -124,11 +146,12 @@ lineedit_read(const char *prompt)
 			}
 		} else if (c == 21) { /* Ctrl-U (clear line) */
 			while (pos > 0) {
-				write(fd, "\b \b", 3);
+				write(fd, "\b", 1);
 				pos--;
 			}
+			write(fd, "\x1b[K", 3); /* Clear line */
 			sb.len = 0;
-			if (sb.buf) sb.buf[0] = '\0';
+			/* Reset buffer but keep capacity */
 		} else if (c == 27) { /* Escape sequence */
 			char seq[3];
 			if (read(fd, &seq[0], 1) <= 0) break;
@@ -141,11 +164,13 @@ lineedit_read(const char *prompt)
 							saved_current = sh_strdup(sb.buf ? sb.buf : "");
 						}
 						history_idx--;
-						/* Clear current line */
+						/* Clear current line on screen */
 						while (pos > 0) {
-							write(fd, "\b \b", 3);
+							write(fd, "\b", 1);
 							pos--;
 						}
+						write(fd, "\x1b[K", 3);
+						
 						strbuf_free(&sb);
 						strbuf_addstr(&sb, history[history_idx]);
 						if (sb.buf) write(fd, sb.buf, sb.len);
@@ -156,9 +181,11 @@ lineedit_read(const char *prompt)
 						history_idx++;
 						/* Clear current line */
 						while (pos > 0) {
-							write(fd, "\b \b", 3);
+							write(fd, "\b", 1);
 							pos--;
 						}
+						write(fd, "\x1b[K", 3);
+						
 						strbuf_free(&sb);
 						if (history_idx == history_count) {
 							if (saved_current) {
@@ -172,12 +199,29 @@ lineedit_read(const char *prompt)
 						if (sb.buf) write(fd, sb.buf, sb.len);
 						pos = (int)sb.len;
 					}
+				} else if (seq[1] == 'D') { /* Left arrow */
+					if (pos > 0) {
+						pos--;
+						write(fd, "\b", 1);
+					}
+				} else if (seq[1] == 'C') { /* Right arrow */
+					if (pos < (int)sb.len) {
+						pos++;
+						write(fd, "\x1b[C", 3);
+					}
 				}
 			}
 		} else if ((unsigned char)c >= 32 && (unsigned char)c <= 126) {
-			strbuf_addch(&sb, c);
+			strbuf_grow(&sb, 1);
+			if (pos < (int)sb.len) {
+				memmove(sb.buf + pos + 1, sb.buf + pos, sb.len - pos);
+			}
+			sb.buf[pos] = c;
+			sb.len++;
+			
 			write(fd, &c, 1);
 			pos++;
+			refresh_line(fd, &sb, pos);
 		}
 	}
 

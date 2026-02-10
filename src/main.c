@@ -54,6 +54,14 @@ shell_init(void)
 }
 
 static void
+save_history_atexit(void)
+{
+	if (sh.history_file) {
+		history_save(sh.history_file);
+	}
+}
+
+static void
 setup_interactive(void)
 {
 	if (!sh.interactive)
@@ -66,6 +74,18 @@ setup_interactive(void)
 		sh.terminal_fd = STDIN_FILENO;
 		sh.opts |= OPT_MONITOR;
 		jobs_init();
+	}
+
+	/* History */
+	{
+		const char *home = var_get("HOME");
+		if (home) {
+			size_t len = strlen(home) + 32;
+			sh.history_file = sh_malloc(len);
+			snprintf(sh.history_file, len, "%s/.meowsh_history", home);
+			history_load(sh.history_file);
+			atexit(save_history_atexit);
+		}
 	}
 }
 
