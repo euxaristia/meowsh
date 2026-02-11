@@ -164,6 +164,80 @@ command_in_path(const char *name)
 }
 
 static int
+path_has_entry(const char *path, const char *entry)
+{
+	const char *p;
+	const char *end;
+	size_t elen;
+
+	if (!path || !entry || !*entry)
+		return 0;
+
+	elen = strlen(entry);
+	for (p = path; ; p = end + 1) {
+		end = strchr(p, ':');
+		if (!end)
+			end = p + strlen(p);
+		if ((size_t)(end - p) == elen && strncmp(p, entry, elen) == 0)
+			return 1;
+		if (*end == '\0')
+			break;
+	}
+
+	return 0;
+}
+
+static void
+path_prepend_entry(const char *entry)
+{
+	const char *path = var_get("PATH");
+	size_t elen;
+	size_t plen;
+	char *new_path;
+
+	if (!entry || !*entry)
+		return;
+
+	elen = strlen(entry);
+	plen = path ? strlen(path) : 0;
+	new_path = sh_malloc(elen + (plen ? 1 + plen : 0) + 1);
+	memcpy(new_path, entry, elen);
+	if (plen) {
+		new_path[elen] = ':';
+		memcpy(new_path + elen + 1, path, plen + 1);
+	} else {
+		new_path[elen] = '\0';
+	}
+
+	var_set("PATH", new_path, 1);
+	free(new_path);
+}
+
+static void
+ensure_user_path_entries(void)
+{
+	const char *home = var_get("HOME");
+	char local_bin[PATH_MAX];
+	char home_bin[PATH_MAX];
+	const char *path;
+
+	if (!sh.interactive || !home || !*home)
+		return;
+
+	if (snprintf(local_bin, sizeof(local_bin), "%s/.local/bin", home) < 0 ||
+	    snprintf(home_bin, sizeof(home_bin), "%s/bin", home) < 0)
+		return;
+
+	path = var_get("PATH");
+	if (access(home_bin, F_OK) == 0 && !path_has_entry(path, home_bin))
+		path_prepend_entry(home_bin);
+
+	path = var_get("PATH");
+	if (access(local_bin, F_OK) == 0 && !path_has_entry(path, local_bin))
+		path_prepend_entry(local_bin);
+}
+
+static int
 starship_disabled_by_env(const char *v)
 {
 	if (!v || !*v)
@@ -225,6 +299,40 @@ terminal_width(void)
 		return 80;
 
 	return (int)v;
+}
+
+static int
+auto_login_shell(void)
+{
+	const char *shlvl = var_get("SHLVL");
+	long v = 0;
+	char *endp = NULL;
+
+	if (!sh.interactive || sh.login_shell)
+		return 0;
+
+	if (!isatty(STDIN_FILENO))
+		return 0;
+
+	if (!shlvl || !*shlvl) {
+		v = 1;
+	} else {
+		errno = 0;
+		v = strtol(shlvl, &endp, 10);
+		if (errno != 0 || !endp || *endp != '\0')
+			return 0;
+		if (v != 1)
+			return 0;
+	}
+
+	{
+		pid_t pgrp = getpgrp();
+		pid_t fg = tcgetpgrp(STDIN_FILENO);
+		if (fg < 0 || fg != pgrp)
+			return 0;
+	}
+
+	return 1;
 }
 
 static char *
@@ -528,8 +636,12 @@ main(int argc, char **argv)
 	if (isatty(STDIN_FILENO))
 		sh.interactive = 1;
 
+	if (auto_login_shell())
+		sh.login_shell = 1;
+
 	setup_interactive();
 	source_profile();
+	ensure_user_path_entries();
 	maybe_init_starship();
 
 	if (sh.interactive) {
