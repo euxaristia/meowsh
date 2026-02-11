@@ -43,6 +43,7 @@ int input_getc(void);
 
 /* Put a character back */
 void input_ungetc(int c);
+void input_clear_unget(void);
 
 /* Read a complete line (for interactive mode) */
 char *input_readline(const char *prompt);

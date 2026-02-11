@@ -30,12 +30,21 @@ static char *history[MAX_HISTORY];
 static time_t history_time[MAX_HISTORY];
 static int history_count = 0;
 static int history_max = MAX_HISTORY;
+static char *last_submitted_line;
 
 void
 lineedit_init(void)
 {
 	memset(history, 0, sizeof(history));
 	memset(history_time, 0, sizeof(history_time));
+	free(last_submitted_line);
+	last_submitted_line = sh_strdup("");
+}
+
+const char *
+lineedit_last_line(void)
+{
+	return last_submitted_line ? last_submitted_line : "";
 }
 
 static void
@@ -1126,6 +1135,8 @@ lineedit_read(const char *prompt)
 	free(saved_current);
 
 	if (sb.len == 0) {
+		free(last_submitted_line);
+		last_submitted_line = sh_strdup("");
 		lineedit_debugf("return NULL (empty)");
 		strbuf_free(&sb);
 		return NULL;
@@ -1138,7 +1149,12 @@ lineedit_read(const char *prompt)
 			char *nl = strchr(trimmed, '\n');
 			if (nl) *nl = '\0';
 			history_add(trimmed);
+			free(last_submitted_line);
+			last_submitted_line = sh_strdup(trimmed);
 			free(trimmed);
+		} else {
+			free(last_submitted_line);
+			last_submitted_line = sh_strdup("");
 		}
 		lineedit_debugf("return line len=%zu", strlen(res));
 		return res;

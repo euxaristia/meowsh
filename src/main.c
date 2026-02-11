@@ -111,8 +111,10 @@ source_profile(void)
 	 * of desired execution order.
 	 */
 	if (sh.interactive) {
+		const char *allow_env = var_get("MEOWSH_SOURCE_ENV");
 		const char *env = var_get("ENV");
-		if (env && *env && access(env, R_OK) == 0)
+		if (allow_env && strcmp(allow_env, "1") == 0 &&
+		    env && *env && access(env, R_OK) == 0)
 			input_push_file(env);
 	}
 
@@ -127,7 +129,6 @@ source_profile(void)
 					input_push_file(path);
 			}
 		}
-
 		if (access("/etc/profile", R_OK) == 0)
 			input_push_file("/etc/profile");
 	}
@@ -551,8 +552,30 @@ main_loop(void)
 			sh.cur_prompt = NULL;
 		}
 
+		if (sh.interactive)
+			input_clear_unget();
 		tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
 		if (!tree) {
+			if (sh.interactive) {
+				const char *last = lineedit_last_line();
+				if (last && *last) {
+					size_t n = strlen(last);
+					char *retry = sh_malloc(n + 2);
+					memcpy(retry, last, n);
+					retry[n] = '\n';
+					retry[n + 1] = '\0';
+					input_push_string(retry);
+					free(retry);
+					input_clear_unget();
+					tree = parse_command(NULL, sh.ps2);
+					input_pop();
+					if (tree) {
+						if (!option_is_set(OPT_NOEXEC))
+							exec_node(tree, 0);
+						continue;
+					}
+				}
+			}
 			main_debugf("parse_command -> NULL interactive=%d eof=%d",
 			    sh.interactive, (sh.input ? sh.input->eof : -1));
 			/* Empty line / interrupted line / EOF. Avoid probing input in interactive

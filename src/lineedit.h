@@ -22,5 +22,6 @@ void history_clear(void);
 /* Save/load history to/from file */
 void history_load(const char *path);
 void history_save(const char *path);
+const char *lineedit_last_line(void);
 
 #endif /* MEOWSH_LINEEDIT_H */

@@ -234,6 +234,12 @@ input_ungetc(int c)
 	unget_char = c;
 }
 
+void
+input_clear_unget(void)
+{
+	unget_char = -1;
+}
+
 char *
 input_readline(const char *prompt)
 {
