@@ -461,6 +461,19 @@ menu_clear_block(int fd, int rows)
 	}
 }
 
+static void
+menu_clear_and_restore_cursor(int fd, int rows)
+{
+	int i;
+
+	if (rows <= 0)
+		return;
+
+	menu_clear_block(fd, rows);
+	for (i = 0; i < rows; i++)
+		write(fd, "\x1b[1B", 4);
+}
+
 static int
 lineedit_terminal_width(int fd)
 {
@@ -705,7 +718,7 @@ lineedit_read(const char *prompt)
 				break;
 				} else if (c == 3) { /* Ctrl-C */
 					if (menu.active && menu.rows > 0)
-						menu_clear_block(fd, menu.rows);
+						menu_clear_and_restore_cursor(fd, menu.rows);
 					menu_state_reset(&menu);
 					tab_state_clear(&last_tab_line, &last_tab_pos);
 				history_idx = history_count;
