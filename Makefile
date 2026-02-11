@@ -22,6 +22,7 @@ clean:
 
 test: tests/test_completion
 	./tests/test_completion
+	./tests/test_interactive.sh
 
 fuzz: tests/fuzzer meowsh
 	./tests/fuzzer 2000
