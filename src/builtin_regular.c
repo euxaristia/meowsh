@@ -401,8 +401,20 @@ builtin_getopts(int argc, char **argv)
 int
 builtin_history(int argc, char **argv)
 {
-	(void)argc;
-	(void)argv;
+	if (argc == 2 &&
+	    (strcmp(argv[1], "-c") == 0 ||
+	     strcmp(argv[1], "--clear") == 0 ||
+	     strcmp(argv[1], "clear") == 0)) {
+		history_clear();
+		if (sh.history_file)
+			history_save(sh.history_file);
+		return 0;
+	}
+	if (argc != 1) {
+		sh_error("history: usage: history [-c|--clear|clear]");
+		return 2;
+	}
+
 	lineedit_print_history();
 	return 0;
 }
@@ -893,6 +905,17 @@ builtin_unalias(int argc, char **argv)
 		}
 	}
 	return status;
+}
+
+/* meow */
+int
+builtin_meow(int argc, char **argv)
+{
+	(void)argc; (void)argv;
+	printf("  /\\_/\\\n");
+	printf(" ( o.o )\n");
+	printf("  > ^ <  meow!\n");
+	return 0;
 }
 
 /* wait [pid|job...] */

@@ -17,6 +17,7 @@ void history_add(const char *line);
 
 /* Print history */
 void lineedit_print_history(void);
+void history_clear(void);
 
 /* Save/load history to/from file */
 void history_load(const char *path);

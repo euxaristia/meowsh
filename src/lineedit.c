@@ -19,10 +19,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <termios.h>
+#include <time.h>
 
 #define MAX_HISTORY 100
 
 static char *history[MAX_HISTORY];
+static time_t history_time[MAX_HISTORY];
 static int history_count = 0;
 static int history_max = MAX_HISTORY;
 
@@ -30,25 +32,63 @@ void
 lineedit_init(void)
 {
 	memset(history, 0, sizeof(history));
+	memset(history_time, 0, sizeof(history_time));
 }
 
-void
-history_add(const char *line)
+static void
+history_add_at(const char *line, time_t when)
 {
 	if (!line || !*line)
-		return;
-
-	/* Don't add if same as last */
-	if (history_count > 0 && strcmp(history[history_count - 1], line) == 0)
 		return;
 
 	if (history_count == history_max) {
 		free(history[0]);
 		memmove(history, history + 1, (size_t)(history_max - 1) * sizeof(char *));
+		memmove(history_time, history_time + 1,
+		    (size_t)(history_max - 1) * sizeof(time_t));
 		history_count--;
 	}
 
 	history[history_count++] = sh_strdup(line);
+	history_time[history_count - 1] = when > 0 ? when : time(NULL);
+}
+
+void
+history_add(const char *line)
+{
+	history_add_at(line, time(NULL));
+}
+
+static int
+parse_time_prefix(const char *s, time_t *out)
+{
+	struct tm tm;
+	int year, mon, mday, hour, min, sec;
+	char trail;
+
+	if (!s || !out)
+		return 0;
+
+	if (sscanf(s, "%4d-%2d-%2d %2d:%2d:%2d%c",
+	    &year, &mon, &mday, &hour, &min, &sec, &trail) != 7)
+		return 0;
+	if (trail != ' ')
+		return 0;
+	if (year < 1970 || mon < 1 || mon > 12 || mday < 1 || mday > 31 ||
+	    hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 || sec > 60)
+		return 0;
+
+	memset(&tm, 0, sizeof(tm));
+	tm.tm_year = year - 1900;
+	tm.tm_mon = mon - 1;
+	tm.tm_mday = mday;
+	tm.tm_hour = hour;
+	tm.tm_min = min;
+	tm.tm_sec = sec;
+	tm.tm_isdst = -1;
+
+	*out = mktime(&tm);
+	return *out != (time_t)-1;
 }
 
 static struct termios orig_termios;
@@ -531,8 +571,26 @@ lineedit_print_history(void)
 {
 	int i;
 	for (i = history_count - 1; i >= 0; i--) {
-		printf("%5d  %s\n", i + 1, history[i]);
+		char tsbuf[32];
+		struct tm tm;
+		time_t when = history_time[i] > 0 ? history_time[i] : time(NULL);
+		localtime_r(&when, &tm);
+		strftime(tsbuf, sizeof(tsbuf), "%Y-%m-%d %H:%M:%S", &tm);
+		printf("%s %s\n", tsbuf, history[i]);
 	}
+}
+
+void
+history_clear(void)
+{
+	int i;
+
+	for (i = 0; i < history_count; i++) {
+		free(history[i]);
+		history[i] = NULL;
+		history_time[i] = 0;
+	}
+	history_count = 0;
 }
 
 void
@@ -542,9 +600,15 @@ history_load(const char *path)
 	char buf[1024];
 	if (!fp) return;
 	while (fgets(buf, sizeof(buf), fp)) {
+		time_t when;
+		const char *cmd = buf;
 		char *nl = strchr(buf, '\n');
 		if (nl) *nl = '\0';
-		history_add(buf);
+		if (parse_time_prefix(buf, &when) && strlen(buf) > 20)
+			cmd = buf + 20;
+		else
+			when = time(NULL);
+		history_add_at(cmd, when);
 	}
 	fclose(fp);
 }
@@ -556,7 +620,12 @@ history_save(const char *path)
 	int i;
 	if (!fp) return;
 	for (i = 0; i < history_count; i++) {
-		fprintf(fp, "%s\n", history[i]);
+		char tsbuf[32];
+		struct tm tm;
+		time_t when = history_time[i] > 0 ? history_time[i] : time(NULL);
+		localtime_r(&when, &tm);
+		strftime(tsbuf, sizeof(tsbuf), "%Y-%m-%d %H:%M:%S", &tm);
+		fprintf(fp, "%s %s\n", tsbuf, history[i]);
 	}
 	fclose(fp);
 }
