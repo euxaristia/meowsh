@@ -1,2 +1,4 @@
 *.o
 meowsh
+tests/fuzzer
+tests/test_completion
