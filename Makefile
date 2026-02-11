@@ -3,6 +3,7 @@ CFLAGS = -Wall -Wextra -Wno-unused-parameter -Isrc -g -O2 -D_POSIX_C_SOURCE=2008
 LDFLAGS = 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
+SHELLS_FILE ?= /etc/shells
 
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:.c=.o)
@@ -28,6 +29,17 @@ fuzz: tests/fuzzer meowsh
 install: test $(TARGET)
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 755 "$(TARGET)" "$(DESTDIR)$(BINDIR)/$(TARGET)"
+	@if [ -n "$(DESTDIR)" ]; then \
+		echo "Skipping $(SHELLS_FILE) update because DESTDIR is set."; \
+	elif [ ! -f "$(SHELLS_FILE)" ] || [ ! -w "$(SHELLS_FILE)" ]; then \
+		echo "Note: could not update $(SHELLS_FILE)."; \
+		echo "Run: echo \"$(BINDIR)/$(TARGET)\" | sudo tee -a $(SHELLS_FILE)"; \
+	elif grep -Fqx "$(BINDIR)/$(TARGET)" "$(SHELLS_FILE)"; then \
+		echo "$(BINDIR)/$(TARGET) already present in $(SHELLS_FILE)."; \
+	else \
+		echo "$(BINDIR)/$(TARGET)" >> "$(SHELLS_FILE)"; \
+		echo "Added $(BINDIR)/$(TARGET) to $(SHELLS_FILE)."; \
+	fi
 
 local-install: test $(TARGET)
 	install -d "$(HOME)/.local/bin"
