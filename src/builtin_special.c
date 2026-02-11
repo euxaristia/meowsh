@@ -129,12 +129,14 @@ found:
 	/* Parse and execute */
 	status = 0;
 	for (;;) {
+		int c;
 		arena_free(&parse_arena);
 		tree = parse_command(NULL, NULL);
 		if (!tree) {
-			if (input_getc() < 0)
+			c = input_getc();
+			if (c < 0)
 				break;
-			input_ungetc(0);
+			input_ungetc(c);
 			continue;
 		}
 		status = exec_node(tree, 0);
@@ -176,12 +178,14 @@ builtin_eval(int argc, char **argv)
 	strbuf_free(&sb);
 
 	for (;;) {
+		int c;
 		arena_free(&parse_arena);
 		tree = parse_command(NULL, NULL);
 		if (!tree) {
-			if (input_getc() < 0)
+			c = input_getc();
+			if (c < 0)
 				break;
-			input_ungetc(0);
+			input_ungetc(c);
 			continue;
 		}
 		status = exec_node(tree, 0);

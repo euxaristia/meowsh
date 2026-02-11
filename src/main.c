@@ -108,20 +108,13 @@ source_profile(void)
 {
 	/*
 	 * input_push_* uses a stack (LIFO), so push startup files in reverse
-	 * of desired execution order:
-	 *   login shell: /etc/profile -> ~/.profile -> ~/.meowshrc -> $ENV
-	 *   non-login interactive: ~/.meowshrc -> $ENV
+	 * of desired execution order.
 	 */
 	if (sh.interactive) {
-		const char *home = var_get("HOME");
+		const char *allow_env = var_get("MEOWSH_SOURCE_ENV");
 		const char *env = var_get("ENV");
-		if (home) {
-			char rcpath[PATH_MAX];
-			snprintf(rcpath, sizeof(rcpath), "%s/.meowshrc", home);
-			if (access(rcpath, R_OK) == 0)
-				input_push_file(rcpath);
-		}
-		if (env && *env && access(env, R_OK) == 0)
+		if (allow_env && strcmp(allow_env, "1") == 0 &&
+		    env && *env && access(env, R_OK) == 0)
 			input_push_file(env);
 	}
 
@@ -322,40 +315,6 @@ terminal_width(void)
 	return (int)v;
 }
 
-static int
-auto_login_shell(void)
-{
-	const char *shlvl = var_get("SHLVL");
-	long v = 0;
-	char *endp = NULL;
-
-	if (!sh.interactive || sh.login_shell)
-		return 0;
-
-	if (!isatty(STDIN_FILENO))
-		return 0;
-
-	if (!shlvl || !*shlvl) {
-		v = 1;
-	} else {
-		errno = 0;
-		v = strtol(shlvl, &endp, 10);
-		if (errno != 0 || !endp || *endp != '\0')
-			return 0;
-		if (v != 1)
-			return 0;
-	}
-
-	{
-		pid_t pgrp = getpgrp();
-		pid_t fg = tcgetpgrp(STDIN_FILENO);
-		if (fg < 0 || fg != pgrp)
-			return 0;
-	}
-
-	return 1;
-}
-
 static char *
 build_starship_prompt(int status)
 {
@@ -532,7 +491,7 @@ main_loop(void)
 			if (!user) user = "meow";
 			if (!pwd) pwd = "?";
 			
-			if ((!cfg_ps1 || strcmp(cfg_ps1, "meowsh % ") == 0) &&
+			if (ps1_is_default_style(cfg_ps1) &&
 			    sh.starship_enabled) {
 				starship_ps1 = build_starship_prompt(sh.last_status);
 				if (starship_ps1) {
@@ -547,7 +506,7 @@ main_loop(void)
 						    user, short_pwd);
 						sh.ps1 = ps1_buf;
 					}
-				} else if (!cfg_ps1 || strcmp(cfg_ps1, "meowsh % ") == 0) {
+				} else if (ps1_is_default_style(cfg_ps1)) {
 					shorten_path(short_pwd, pwd, sizeof(short_pwd));
 
 					/* Fish-style prompt: [user] /s/p/path $ */
@@ -596,8 +555,15 @@ main_loop(void)
 			    sh.interactive, (sh.input ? sh.input->eof : -1));
 			/* Empty line / interrupted line / EOF. Avoid probing input in interactive
 			 * mode because that can trigger extra prompt reads and visual artifacts. */
-			if (sh.input && sh.input->eof)
+			if (sh.input && sh.input->eof) {
+				/* If we're on a stacked source (e.g. startup file),
+				 * pop it and continue reading from the previous source. */
+				if (sh.input->prev) {
+					input_pop();
+					continue;
+				}
 				break;
+			}
 			if (!sh.interactive) {
 				int c = input_getc();
 				if (c < 0)
@@ -679,10 +645,9 @@ main(int argc, char **argv)
 	if (isatty(STDIN_FILENO))
 		sh.interactive = 1;
 
-	if (auto_login_shell())
-		sh.login_shell = 1;
-
 	setup_interactive();
+	if (sh.interactive)
+		input_push_fd(STDIN_FILENO);
 	source_profile();
 	ensure_user_path_entries();
 	maybe_init_starship();
@@ -691,7 +656,8 @@ main(int argc, char **argv)
 		fprintf(stderr, "meowsh — welcome! (type 'exit' to quit)\n");
 	}
 
-	input_push_fd(STDIN_FILENO);
+	if (!sh.interactive)
+		input_push_fd(STDIN_FILENO);
 	main_loop();
 	input_pop();
 
