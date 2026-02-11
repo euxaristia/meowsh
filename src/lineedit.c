@@ -737,6 +737,14 @@ lineedit_read(const char *prompt)
 				pos = (int)sb.len;
 				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			} else if (c == '\t') { /* Tab completion */
+				if (menu.active && menu.count > 1) {
+					menu.selected = (menu.selected + 1) % menu.count;
+					suppress_suggestion = 0;
+					menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+					    !suppress_suggestion);
+					continue;
+				}
+
 				if (sb.len == 0 && pos == 0) {
 					menu_state_reset(&menu);
 					tab_state_clear(&last_tab_line, &last_tab_pos);
@@ -751,16 +759,11 @@ lineedit_read(const char *prompt)
 				const char *buf = sb.buf ? sb.buf : "";
 			int start = word_start_at(buf, pos);
 			int pfx_len = pos - start;
-			int repeated_tab = (last_tab_line && last_tab_pos == pos &&
-			    strcmp(last_tab_line, buf) == 0);
+				int repeated_tab = (last_tab_line && last_tab_pos == pos &&
+				    strcmp(last_tab_line, buf) == 0);
 
 				if (cr && cr->count > 0) {
-					if (menu.active && menu.count > 1) {
-						menu.selected = (menu.selected + 1) % menu.count;
-						suppress_suggestion = 0;
-						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
-						    !suppress_suggestion);
-					} else if (cr->count == 1) {
+					if (cr->count == 1) {
 						menu_state_reset(&menu);
 					size_t mlen = strlen(cr->matches[0]);
 					int append_space = 0;
