@@ -577,8 +577,6 @@ static void
 menu_apply_and_render(int fd, struct menu_state *menu, struct strbuf *sb, int *pos,
     const char *display_prompt, int show_suggestion)
 {
-	struct completion_result tmp = {0};
-
 	if (!menu->active || menu->count == 0)
 		return;
 
@@ -586,14 +584,6 @@ menu_apply_and_render(int fd, struct menu_state *menu, struct strbuf *sb, int *p
 	strbuf_addstr(sb, menu->base_line);
 	*pos = menu->base_pos;
 	lineedit_apply_completion(sb, pos, menu->matches[menu->selected], 0);
-
-	menu_clear_block(fd, menu->rows);
-	write(fd, "\n", 1);
-
-	tmp.matches = menu->matches;
-	tmp.count = menu->count;
-	lineedit_print_matches_columns(fd, &tmp, (ssize_t)menu->selected,
-	    &menu->rows, &menu->cols);
 	refresh_line(fd, display_prompt, sb, *pos, show_suggestion);
 }
 
