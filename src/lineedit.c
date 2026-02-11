@@ -474,6 +474,14 @@ menu_clear_and_restore_cursor(int fd, int rows)
 		write(fd, "\x1b[1B", 4);
 }
 
+static void
+menu_deactivate(int fd, struct menu_state *menu)
+{
+	if (menu->active && menu->rows > 0)
+		menu_clear_and_restore_cursor(fd, menu->rows);
+	menu_state_reset(menu);
+}
+
 static int
 lineedit_terminal_width(int fd)
 {
@@ -711,15 +719,13 @@ lineedit_read(const char *prompt)
 		lineedit_debugf("key=%u pos=%d len=%zu", (unsigned)c, pos, sb.len);
 
 			if (c == '\r' || c == '\n') {
-				menu_state_reset(&menu);
+				menu_deactivate(fd, &menu);
 				tab_state_clear(&last_tab_line, &last_tab_pos);
 				strbuf_addch(&sb, '\n');
 				write(fd, "\n", 1);
 				break;
 				} else if (c == 3) { /* Ctrl-C */
-					if (menu.active && menu.rows > 0)
-						menu_clear_and_restore_cursor(fd, menu.rows);
-					menu_state_reset(&menu);
+					menu_deactivate(fd, &menu);
 					tab_state_clear(&last_tab_line, &last_tab_pos);
 				history_idx = history_count;
 					free(saved_current);
@@ -746,7 +752,7 @@ lineedit_read(const char *prompt)
 				}
 
 				if (sb.len == 0 && pos == 0) {
-					menu_state_reset(&menu);
+					menu_deactivate(fd, &menu);
 					tab_state_clear(&last_tab_line, &last_tab_pos);
 					strbuf_addch(&sb, '\t');
 					pos = 1;
@@ -764,7 +770,7 @@ lineedit_read(const char *prompt)
 
 				if (cr && cr->count > 0) {
 					if (cr->count == 1) {
-						menu_state_reset(&menu);
+						menu_deactivate(fd, &menu);
 					size_t mlen = strlen(cr->matches[0]);
 					int append_space = 0;
 
@@ -780,7 +786,7 @@ lineedit_read(const char *prompt)
 						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					}
 				} else if (cr->common_len > (size_t)pfx_len) {
-					menu_state_reset(&menu);
+					menu_deactivate(fd, &menu);
 					/* Add common prefix characters */
 					size_t to_add = cr->common_len - (size_t)pfx_len;
 					strbuf_grow(&sb, to_add);
@@ -808,19 +814,19 @@ lineedit_read(const char *prompt)
 						}
 						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					} else {
-					menu_state_reset(&menu);
+					menu_deactivate(fd, &menu);
 					write(fd, "\a", 1);
 				}
 				tab_state_store(&last_tab_line, &last_tab_pos, &sb, pos);
 			} else {
-				menu_state_reset(&menu);
+				menu_deactivate(fd, &menu);
 				write(fd, "\a", 1);
 				tab_state_store(&last_tab_line, &last_tab_pos, &sb, pos);
 			}
 			completion_free(cr);
 			continue;
 		} else if (c == 127 || c == 8) { /* Backspace */
-			menu_state_reset(&menu);
+			menu_deactivate(fd, &menu);
 			tab_state_clear(&last_tab_line, &last_tab_pos);
 			if (pos > 0) {
 				pos--;
@@ -831,7 +837,7 @@ lineedit_read(const char *prompt)
 				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			}
 		} else if (c == 4) { /* Ctrl-D */
-			menu_state_reset(&menu);
+			menu_deactivate(fd, &menu);
 			tab_state_clear(&last_tab_line, &last_tab_pos);
 			if (sb.len == 0) {
 				disable_raw_mode(fd);
@@ -847,7 +853,7 @@ lineedit_read(const char *prompt)
 				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			}
 		} else if (c == 21) { /* Ctrl-U (clear line) */
-			menu_state_reset(&menu);
+			menu_deactivate(fd, &menu);
 			tab_state_clear(&last_tab_line, &last_tab_pos);
 			pos = 0;
 			sb.len = 0;
@@ -898,8 +904,8 @@ lineedit_read(const char *prompt)
 					}
 				}
 
-				menu_state_reset(&menu);
-				tab_state_clear(&last_tab_line, &last_tab_pos);
+					menu_deactivate(fd, &menu);
+					tab_state_clear(&last_tab_line, &last_tab_pos);
 				if (seq[1] == 'A') { /* Up arrow */
 					if (history_idx > 0) {
 						if (history_idx == history_count) {
@@ -963,7 +969,7 @@ lineedit_read(const char *prompt)
 				}
 			}
 		} else if ((unsigned char)c >= 32 && (unsigned char)c <= 126) {
-			menu_state_reset(&menu);
+			menu_deactivate(fd, &menu);
 			tab_state_clear(&last_tab_line, &last_tab_pos);
 			strbuf_grow(&sb, 1);
 			if (pos < (int)sb.len) {
