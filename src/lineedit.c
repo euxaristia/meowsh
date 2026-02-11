@@ -288,10 +288,27 @@ command_exists_for_highlight(const char *token)
 	}
 }
 
+static const char *
+lineedit_find_history_suggestion(const char *line, size_t len)
+{
+	int i;
+
+	if (!line || len == 0)
+		return NULL;
+
+	for (i = history_count - 1; i >= 0; i--) {
+		if (prefix(history[i], line) && history[i][len] != '\0')
+			return history[i];
+	}
+
+	return NULL;
+}
+
 static void
 refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_suggestion)
 {
 	struct strbuf colored = STRBUF_INIT;
+	struct strbuf out = STRBUF_INIT;
 	const char *line = sb->buf ? sb->buf : "";
 	const char *p = line;
 	int in_quote = 0;
@@ -379,19 +396,11 @@ refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_su
 		}
 	}
 	
-	/* Go to beginning of line, print prompt */
-	write(fd, "\r", 1);
-	if (prompt) write(fd, prompt, strlen(prompt));
-
 	/* Find suggestion if at end of line */
 	if (show_suggestion && pos == (int)sb->len && sb->len > 0) {
-		int i;
-		for (i = history_count - 1; i >= 0; i--) {
-			if (prefix(history[i], sb->buf)) {
-				suggestion = history[i] + sb->len;
-				break;
-			}
-		}
+		const char *match = lineedit_find_history_suggestion(sb->buf, sb->len);
+		if (match)
+			suggestion = match + sb->len;
 	}
 
 	/* Highlight words: builtins in blue, paths in cyan etc. */
@@ -432,21 +441,36 @@ refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_su
 		strbuf_addstr(&colored, suggestion);
 		strbuf_addstr(&colored, "\x1b[0m");
 	}
-
-	if (colored.buf) write(fd, colored.buf, colored.len);
-	write(fd, "\x1b[K", 3); /* Clear to end */
-
-	/* Move cursor back to pos */
-	write(fd, "\r", 1);
-	if (prompt) write(fd, prompt, strlen(prompt));
-	{
+	/* Render in one write to reduce cursor jitter/flicker while typing. */
+	strbuf_addstr(&out, "\x1b[?25l\r");
+	if (prompt)
+		strbuf_addstr(&out, prompt);
+	if (colored.buf)
+		strbuf_addmem(&out, colored.buf, colored.len);
+	strbuf_addstr(&out, "\x1b[K\r");
+	if (prompt)
+		strbuf_addstr(&out, prompt);
+	if (pos > 0) {
 		int i;
+		int cols = 0;
+		char esc[32];
+
 		for (i = 0; i < pos; i++) {
-			if (sb->buf && sb->buf[i] == '\t') write(fd, "    ", 4);
-			else write(fd, "\x1b[C", 3);
+			if (sb->buf && sb->buf[i] == '\t')
+				cols += 4;
+			else
+				cols++;
+		}
+		if (cols > 0) {
+			snprintf(esc, sizeof(esc), "\x1b[%dC", cols);
+			strbuf_addstr(&out, esc);
 		}
 	}
+	strbuf_addstr(&out, "\x1b[?25h");
+	if (out.buf)
+		write(fd, out.buf, out.len);
 	strbuf_free(&colored);
+	strbuf_free(&out);
 }
 
 static const char *
@@ -1051,16 +1075,15 @@ lineedit_read(const char *prompt)
 						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					} else {
 						/* Accept suggestion if any */
-						int i;
-						for (i = history_count - 1; i >= 0; i--) {
-							if (prefix(history[i], sb.buf ? sb.buf : "")) {
-								strbuf_reset(&sb);
-								strbuf_addstr(&sb, history[i]);
-								pos = (int)sb.len;
-								suppress_suggestion = 0;
-								refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
-								break;
-							}
+						const char *match = NULL;
+						if (!suppress_suggestion && pos == (int)sb.len)
+							match = lineedit_find_history_suggestion(sb.buf ? sb.buf : "", sb.len);
+						if (match) {
+							strbuf_reset(&sb);
+							strbuf_addstr(&sb, match);
+							pos = (int)sb.len;
+							suppress_suggestion = 0;
+							refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 						}
 					}
 				} else if (key == LE_KEY_HOME) { /* Home */

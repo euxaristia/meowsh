@@ -106,10 +106,18 @@ setup_interactive(void)
 static void
 source_profile(void)
 {
+	/*
+	 * input_push_* uses a stack (LIFO), so push startup files in reverse
+	 * of desired execution order.
+	 */
+	if (sh.interactive) {
+		const char *env = var_get("ENV");
+		if (env && *env && access(env, R_OK) == 0)
+			input_push_file(env);
+	}
+
 	if (sh.login_shell) {
-		if (access("/etc/profile", R_OK) == 0)
-			input_push_file("/etc/profile");
-		/* $HOME/.profile */
+		/* $HOME/.profile should run after /etc/profile */
 		{
 			const char *home = var_get("HOME");
 			if (home) {
@@ -119,13 +127,9 @@ source_profile(void)
 					input_push_file(path);
 			}
 		}
-	}
 
-	/* $ENV for interactive shells */
-	if (sh.interactive) {
-		const char *env = var_get("ENV");
-		if (env && *env && access(env, R_OK) == 0)
-			input_push_file(env);
+		if (access("/etc/profile", R_OK) == 0)
+			input_push_file("/etc/profile");
 	}
 }
 
