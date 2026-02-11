@@ -108,13 +108,20 @@ source_profile(void)
 {
 	/*
 	 * input_push_* uses a stack (LIFO), so push startup files in reverse
-	 * of desired execution order.
+	 * of desired execution order:
+	 *   login shell: /etc/profile -> ~/.profile -> ~/.meowshrc -> $ENV
+	 *   non-login interactive: ~/.meowshrc -> $ENV
 	 */
 	if (sh.interactive) {
-		const char *allow_env = var_get("MEOWSH_SOURCE_ENV");
+		const char *home = var_get("HOME");
 		const char *env = var_get("ENV");
-		if (allow_env && strcmp(allow_env, "1") == 0 &&
-		    env && *env && access(env, R_OK) == 0)
+		if (home) {
+			char rcpath[PATH_MAX];
+			snprintf(rcpath, sizeof(rcpath), "%s/.meowshrc", home);
+			if (access(rcpath, R_OK) == 0)
+				input_push_file(rcpath);
+		}
+		if (env && *env && access(env, R_OK) == 0)
 			input_push_file(env);
 	}
 
@@ -256,6 +263,15 @@ starship_disabled_by_env(const char *v)
 	    strcmp(v, "FALSE") == 0;
 }
 
+static int
+ps1_is_default_style(const char *ps1)
+{
+	if (!ps1)
+		return 1;
+	return strcmp(ps1, "meowsh % ") == 0 ||
+	    strcmp(ps1, "🐱 ") == 0;
+}
+
 static void
 maybe_init_starship(void)
 {
@@ -270,7 +286,7 @@ maybe_init_starship(void)
 		return;
 
 	ps1 = var_get("PS1");
-	if (ps1 && strcmp(ps1, "meowsh % ") != 0)
+	if (!ps1_is_default_style(ps1))
 		return;
 
 	if (!command_in_path("starship"))

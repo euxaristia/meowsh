@@ -12,6 +12,7 @@
 #include "memalloc.h"
 #include "mystring.h"
 #include "alias.h"
+#include "builtin.h"
 
 #include <string.h>
 
@@ -744,6 +745,8 @@ try_alias(struct token *tok)
 	if (tok->type != TOK_WORD && tok->type < TOK_IF)
 		return 0;
 	if (!tok->value)
+		return 0;
+	if (is_special_builtin(tok->value))
 		return 0;
 	if (alias_is_inuse(tok->value))
 		return 0;
