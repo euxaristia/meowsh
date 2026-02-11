@@ -79,6 +79,64 @@ disable_raw_mode(int fd)
 	}
 }
 
+static int
+command_exists_for_highlight(const char *token)
+{
+	const char *path;
+
+	if (!token || !*token)
+		return 0;
+
+	if (builtin_lookup(token) || alias_get(token))
+		return 1;
+
+	if (strchr(token, '/'))
+		return access(token, X_OK) == 0;
+
+	path = var_get("PATH");
+	if (path && *path) {
+		const char *pp, *end;
+		size_t token_len = strlen(token);
+		char fullpath[PATH_MAX];
+
+		for (pp = path; ; pp = end + 1) {
+			end = strchr(pp, ':');
+			if (!end)
+				end = pp + strlen(pp);
+
+			if (end == pp) {
+				if (2 + token_len >= sizeof(fullpath)) {
+					if (*end == '\0')
+						break;
+					continue;
+				}
+				fullpath[0] = '.';
+				fullpath[1] = '/';
+				memcpy(fullpath + 2, token, token_len);
+				fullpath[2 + token_len] = '\0';
+			} else {
+				size_t dir_len = (size_t)(end - pp);
+				if (dir_len + 1 + token_len >= sizeof(fullpath)) {
+					if (*end == '\0')
+						break;
+					continue;
+				}
+				memcpy(fullpath, pp, dir_len);
+				fullpath[dir_len] = '/';
+				memcpy(fullpath + dir_len + 1, token, token_len);
+				fullpath[dir_len + 1 + token_len] = '\0';
+			}
+
+			if (access(fullpath, X_OK) == 0)
+				return 1;
+			if (*end == '\0')
+				break;
+		}
+	}
+
+	return 0;
+}
+
 static void
 refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_suggestion)
 {
@@ -88,87 +146,85 @@ refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_su
 	int in_quote = 0;
 	char quote_char = 0;
 	const char *suggestion = NULL;
-	size_t cmd_start = 0, cmd_len = 0;
-	int cmd_unknown = 0;
+	size_t unknown_start[64];
+	size_t unknown_len[64];
+	size_t unknown_count = 0;
+	size_t unknown_idx = 0;
 	size_t i;
 
-	/* Determine whether first command token is unknown for red highlighting. */
+	/* Determine unknown command tokens at the start of each command segment. */
 	{
 		size_t len = strlen(line);
-		size_t s = 0;
-		size_t e;
-		const char *path;
-		const char *pp, *end;
+		size_t seg = 0;
 		char token[PATH_MAX];
-		size_t token_len = 0;
 
-		while (s < len && (line[s] == ' ' || line[s] == '\t'))
-			s++;
-		e = s;
-		while (e < len &&
-		    line[e] != ' ' && line[e] != '\t' &&
-		    line[e] != '|' && line[e] != '&' &&
-		    line[e] != ';' && line[e] != '<' &&
-		    line[e] != '>') {
-			e++;
-		}
+		while (seg < len) {
+			size_t j = seg;
+			int found_cmd = 0;
 
-		if (e > s && (e - s) < sizeof(token)) {
-			memcpy(token, line + s, e - s);
-			token[e - s] = '\0';
-			token_len = e - s;
+			while (j < len && (line[j] == ' ' || line[j] == '\t'))
+				j++;
+			if (j >= len)
+				break;
 
-			if (!strchr(token, '=') || strchr(token, '/')) {
-				if (!builtin_lookup(token) && !alias_get(token)) {
-					if (strchr(token, '/')) {
-						cmd_unknown = access(token, X_OK) != 0;
-					} else {
-						cmd_unknown = 1;
-						path = var_get("PATH");
-						if (path && *path) {
-							char fullpath[PATH_MAX];
-							for (pp = path; ; pp = end + 1) {
-								end = strchr(pp, ':');
-								if (!end)
-									end = pp + strlen(pp);
-								if (end == pp) {
-									if (2 + token_len >= sizeof(fullpath)) {
-										if (*end == '\0')
-											break;
-										continue;
-									}
-									fullpath[0] = '.';
-									fullpath[1] = '/';
-									memcpy(fullpath + 2, token, token_len);
-									fullpath[2 + token_len] = '\0';
-								} else {
-									size_t dir_len = (size_t)(end - pp);
-									if (dir_len + 1 + token_len >= sizeof(fullpath)) {
-										if (*end == '\0')
-											break;
-										continue;
-									}
-									memcpy(fullpath, pp, dir_len);
-									fullpath[dir_len] = '/';
-									memcpy(fullpath + dir_len + 1, token, token_len);
-									fullpath[dir_len + 1 + token_len] = '\0';
-								}
-								if (access(fullpath, X_OK) == 0) {
-									cmd_unknown = 0;
-									break;
-								}
-								if (*end == '\0')
-									break;
-							}
-						}
-					}
+			for (;;) {
+				size_t ts, te, tl;
+
+				while (j < len && (line[j] == ' ' || line[j] == '\t'))
+					j++;
+				if (j >= len)
+					break;
+
+				if (line[j] == ';' || line[j] == '|' || line[j] == '&')
+					break;
+
+				ts = j;
+				while (j < len &&
+				    line[j] != ' ' && line[j] != '\t' &&
+				    line[j] != ';' && line[j] != '|' &&
+				    line[j] != '&' && line[j] != '<' &&
+				    line[j] != '>') {
+					j++;
+				}
+				te = j;
+				tl = te - ts;
+				if (tl == 0)
+					continue;
+
+				if (tl >= sizeof(token)) {
+					found_cmd = 1;
+					break;
+				}
+				memcpy(token, line + ts, tl);
+				token[tl] = '\0';
+
+				if (strchr(token, '=') && !strchr(token, '/'))
+					continue;
+
+				if (!command_exists_for_highlight(token) &&
+				    unknown_count < (sizeof(unknown_start) / sizeof(unknown_start[0]))) {
+					unknown_start[unknown_count] = ts;
+					unknown_len[unknown_count] = tl;
+					unknown_count++;
+				}
+				found_cmd = 1;
+				break;
+			}
+
+			while (j < len && line[j] != ';' && line[j] != '|' && line[j] != '&')
+				j++;
+			if (j < len) {
+				if ((line[j] == '&' || line[j] == '|') &&
+				    j + 1 < len && line[j + 1] == line[j]) {
+					j += 2;
+				} else {
+					j++;
 				}
 			}
+			seg = j;
 
-			if (cmd_unknown) {
-				cmd_start = s;
-				cmd_len = e - s;
-			}
+			if (!found_cmd && seg >= len)
+				break;
 		}
 	}
 	
@@ -191,13 +247,15 @@ refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_su
 	/* For now: simple quotes and comments */
 	while (*p) {
 		i = (size_t)(p - line);
-		if (!in_quote && cmd_unknown && i == cmd_start) {
+		if (!in_quote && unknown_idx < unknown_count && i == unknown_start[unknown_idx]) {
+			size_t seglen = unknown_len[unknown_idx];
 			size_t k;
 			strbuf_addstr(&colored, "\x1b[31m"); /* Red */
-			for (k = 0; k < cmd_len && p[k]; k++)
+			for (k = 0; k < seglen && p[k]; k++)
 				strbuf_addch(&colored, p[k]);
 			strbuf_addstr(&colored, "\x1b[0m");
-			p += cmd_len;
+			p += seglen;
+			unknown_idx++;
 		} else if (!in_quote && (*p == '\'' || *p == '"')) {
 			in_quote = 1;
 			quote_char = *p;
