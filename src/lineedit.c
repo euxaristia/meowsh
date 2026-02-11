@@ -462,23 +462,30 @@ menu_clear_block(int fd, int rows)
 }
 
 static void
-menu_clear_and_restore_cursor(int fd, int rows)
+menu_remove_from_screen(int fd, int rows)
 {
 	int i;
 
 	if (rows <= 0)
 		return;
 
-	menu_clear_block(fd, rows);
-	for (i = 0; i < rows; i++)
-		write(fd, "\x1b[1B", 4);
+	/* Layout while menu is active:
+	 *   old prompt line
+	 *   menu rows...
+	 *   current prompt line (cursor here)
+	 * Remove old prompt + menu rows so current prompt collapses upward.
+	 */
+	for (i = 0; i < rows + 1; i++)
+		write(fd, "\x1b[1A", 4);
+	for (i = 0; i < rows + 1; i++)
+		write(fd, "\r\x1b[M", 4);
 }
 
 static void
 menu_deactivate(int fd, struct menu_state *menu)
 {
 	if (menu->active && menu->rows > 0)
-		menu_clear_and_restore_cursor(fd, menu->rows);
+		menu_remove_from_screen(fd, menu->rows);
 	menu_state_reset(menu);
 }
 
