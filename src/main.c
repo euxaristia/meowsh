@@ -23,6 +23,32 @@
 
 #include <locale.h>
 #include <sys/ioctl.h>
+#include <stdarg.h>
+
+static FILE *main_debug_fp;
+static int main_debug_inited;
+
+static void
+main_debugf(const char *fmt, ...)
+{
+	const char *enabled;
+	va_list ap;
+
+	if (!main_debug_inited) {
+		main_debug_inited = 1;
+		enabled = getenv("MEOWSH_DEBUG_LINEEDIT");
+		if (enabled && *enabled)
+			main_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a");
+	}
+	if (!main_debug_fp)
+		return;
+
+	va_start(ap, fmt);
+	vfprintf(main_debug_fp, fmt, ap);
+	va_end(ap);
+	fputc('\n', main_debug_fp);
+	fflush(main_debug_fp);
+}
 
 static void
 shell_init(void)
@@ -415,12 +441,18 @@ main_loop(void)
 
 		tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
 		if (!tree) {
-			int c = input_getc();
-			if (c < 0) {
-				/* EOF */
+			main_debugf("parse_command -> NULL interactive=%d eof=%d",
+			    sh.interactive, (sh.input ? sh.input->eof : -1));
+			/* Empty line / interrupted line / EOF. Avoid probing input in interactive
+			 * mode because that can trigger extra prompt reads and visual artifacts. */
+			if (sh.input && sh.input->eof)
 				break;
+			if (!sh.interactive) {
+				int c = input_getc();
+				if (c < 0)
+					break;
+				input_ungetc(c);
 			}
-			input_ungetc(c);
 			continue;
 			}
 

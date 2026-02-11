@@ -17,6 +17,9 @@ struct builtin_entry {
 /* Find a builtin by name. Returns NULL if not found. */
 const struct builtin_entry *builtin_lookup(const char *name);
 
+/* Get the table of all builtins (null-terminated) */
+const struct builtin_entry *builtin_get_all(void);
+
 /* Check if name is a special builtin */
 int is_special_builtin(const char *name);
 
@@ -50,6 +53,7 @@ int builtin_hash(int argc, char **argv);
 int builtin_history(int argc, char **argv);
 int builtin_jobs(int argc, char **argv);
 int builtin_kill(int argc, char **argv);
+int builtin_meow(int argc, char **argv);
 int builtin_newgrp(int argc, char **argv);
 int builtin_pwd(int argc, char **argv);
 int builtin_read(int argc, char **argv);

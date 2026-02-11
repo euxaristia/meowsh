@@ -40,6 +40,7 @@ static const struct builtin_entry builtins[] = {
 	{ "history",  builtin_history,  0 },
 	{ "jobs",     builtin_jobs,     0 },
 	{ "kill",     builtin_kill,     0 },
+	{ "meow",     builtin_meow,     0 },
 	{ "newgrp",   builtin_newgrp,   0 },
 	{ "pwd",      builtin_pwd,      0 },
 	{ "read",     builtin_read,     0 },
@@ -53,6 +54,12 @@ static const struct builtin_entry builtins[] = {
 	/* Sentinel */
 	{ NULL, NULL, 0 }
 };
+
+const struct builtin_entry *
+builtin_get_all(void)
+{
+	return builtins;
+}
 
 const struct builtin_entry *
 builtin_lookup(const char *name)

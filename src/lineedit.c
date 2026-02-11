@@ -20,6 +20,8 @@
 #include <unistd.h>
 #include <termios.h>
 #include <time.h>
+#include <sys/ioctl.h>
+#include <stdarg.h>
 
 #define MAX_HISTORY 100
 
@@ -93,6 +95,30 @@ parse_time_prefix(const char *s, time_t *out)
 
 static struct termios orig_termios;
 static int raw_mode = 0;
+static FILE *lineedit_debug_fp;
+static int lineedit_debug_inited;
+
+static void
+lineedit_debugf(const char *fmt, ...)
+{
+	const char *enabled;
+	va_list ap;
+
+	if (!lineedit_debug_inited) {
+		lineedit_debug_inited = 1;
+		enabled = getenv("MEOWSH_DEBUG_LINEEDIT");
+		if (enabled && *enabled)
+			lineedit_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a");
+	}
+	if (!lineedit_debug_fp)
+		return;
+
+	va_start(ap, fmt);
+	vfprintf(lineedit_debug_fp, fmt, ap);
+	va_end(ap);
+	fputc('\n', lineedit_debug_fp);
+	fflush(lineedit_debug_fp);
+}
 
 static void
 enable_raw_mode(int fd)
@@ -341,17 +367,299 @@ refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_su
 static const char *
 prompt_last_line(const char *prompt)
 {
-	const char *last = prompt;
+	const char *last;
 	const char *p;
+	const char *end;
 
 	if (!prompt)
 		return NULL;
 
-	for (p = prompt; *p; p++) {
+	end = prompt + strlen(prompt);
+	while (end > prompt && end[-1] == '\n')
+		end--;
+
+	last = prompt;
+	for (p = prompt; p < end; p++) {
 		if (*p == '\n')
 			last = p + 1;
 	}
 	return last;
+}
+
+static int
+word_start_at(const char *buf, int pos)
+{
+	int start = pos;
+
+	while (start > 0 && buf[start - 1] != ' ' && buf[start - 1] != '\t' &&
+	       buf[start - 1] != '|' && buf[start - 1] != ';' && buf[start - 1] != '&' &&
+	       buf[start - 1] != '<' && buf[start - 1] != '>') {
+		start--;
+	}
+	return start;
+}
+
+static void
+tab_state_clear(char **last_tab_line, int *last_tab_pos)
+{
+	free(*last_tab_line);
+	*last_tab_line = NULL;
+	*last_tab_pos = -1;
+}
+
+static void
+tab_state_store(char **last_tab_line, int *last_tab_pos, const struct strbuf *sb, int pos)
+{
+	free(*last_tab_line);
+	*last_tab_line = sh_strdup(sb->buf ? sb->buf : "");
+	*last_tab_pos = pos;
+}
+
+struct menu_state {
+	int active;
+	char **matches;
+	size_t count;
+	size_t selected;
+	char *base_line;
+	int base_pos;
+	int rows;
+	int cols;
+};
+
+static void
+menu_state_reset(struct menu_state *ms)
+{
+	size_t i;
+
+	if (!ms)
+		return;
+	for (i = 0; i < ms->count; i++)
+		free(ms->matches[i]);
+	free(ms->matches);
+	ms->matches = NULL;
+	ms->count = 0;
+	ms->selected = 0;
+	free(ms->base_line);
+	ms->base_line = NULL;
+	ms->base_pos = 0;
+	ms->active = 0;
+	ms->rows = 0;
+	ms->cols = 0;
+}
+
+static void
+menu_clear_block(int fd, int rows)
+{
+	int i;
+
+	if (rows <= 0)
+		return;
+
+	for (i = 0; i < rows; i++)
+		write(fd, "\x1b[1A", 4);
+	for (i = 0; i < rows; i++) {
+		write(fd, "\r\x1b[2K", 5);
+		if (i + 1 < rows)
+			write(fd, "\x1b[1B", 4);
+	}
+	write(fd, "\x1b[1B", 4);
+}
+
+static int
+lineedit_terminal_width(int fd)
+{
+	struct winsize ws;
+
+	if (ioctl(fd, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+		return (int)ws.ws_col;
+	return 80;
+}
+
+static void
+lineedit_print_matches_columns(int fd, struct completion_result *cr, ssize_t selected_idx,
+    int *rows_out, int *cols_out)
+{
+	size_t i;
+	size_t max_len = 0;
+	size_t col_width;
+	size_t cols;
+	size_t rows;
+	int width;
+	int rows_printed = 0;
+
+	if (rows_out)
+		*rows_out = 0;
+	if (cols_out)
+		*cols_out = 0;
+
+	if (!cr || cr->count == 0)
+		return;
+
+	for (i = 0; i < cr->count; i++) {
+		size_t len = strlen(cr->matches[i]);
+		if (len > max_len)
+			max_len = len;
+	}
+	if (max_len == 0)
+		max_len = 1;
+
+	width = lineedit_terminal_width(fd);
+	col_width = max_len + 2;
+	if ((size_t)width < col_width)
+		col_width = (size_t)width;
+	if (col_width == 0)
+		col_width = 1;
+
+	cols = (size_t)width / col_width;
+	if (cols == 0)
+		cols = 1;
+	if (cols > cr->count)
+		cols = cr->count;
+
+	rows = (cr->count + cols - 1) / cols;
+	for (i = 0; i < rows; i++) {
+		size_t c;
+		for (c = 0; c < cols; c++) {
+			size_t idx = i * cols + c;
+			size_t j;
+			size_t len;
+			size_t pad;
+			if (idx >= cr->count)
+				break;
+
+			len = strlen(cr->matches[idx]);
+			if ((ssize_t)idx == selected_idx) {
+				write(fd, "\x1b[7m", 4);
+				write(fd, cr->matches[idx], len);
+				write(fd, "\x1b[0m", 4);
+			} else {
+				write(fd, cr->matches[idx], len);
+			}
+
+			if (c + 1 < cols && idx + 1 < cr->count) {
+				pad = col_width > len ? col_width - len : 1;
+				for (j = 0; j < pad; j++)
+					write(fd, " ", 1);
+			}
+		}
+		write(fd, "\n", 1);
+		rows_printed++;
+	}
+
+	if (rows_out)
+		*rows_out = rows_printed;
+	if (cols_out)
+		*cols_out = (int)cols;
+}
+
+static void
+menu_state_start(struct menu_state *ms, const struct completion_result *cr,
+    const struct strbuf *sb, int pos)
+{
+	size_t i;
+
+	menu_state_reset(ms);
+
+	ms->matches = sh_malloc(cr->count * sizeof(ms->matches[0]));
+	ms->count = cr->count;
+	for (i = 0; i < cr->count; i++)
+		ms->matches[i] = sh_strdup(cr->matches[i]);
+	ms->selected = 0;
+	ms->base_line = sh_strdup(sb->buf ? sb->buf : "");
+	ms->base_pos = pos;
+	ms->active = 1;
+}
+
+static int
+lineedit_apply_completion(struct strbuf *sb, int *pos, const char *match, int append_space);
+
+static void
+menu_apply_and_render(int fd, struct menu_state *menu, struct strbuf *sb, int *pos,
+    const char *display_prompt, int show_suggestion)
+{
+	struct completion_result tmp = {0};
+
+	if (!menu->active || menu->count == 0)
+		return;
+
+	strbuf_reset(sb);
+	strbuf_addstr(sb, menu->base_line);
+	*pos = menu->base_pos;
+	lineedit_apply_completion(sb, pos, menu->matches[menu->selected], 0);
+
+	menu_clear_block(fd, menu->rows);
+	write(fd, "\n", 1);
+
+	tmp.matches = menu->matches;
+	tmp.count = menu->count;
+	lineedit_print_matches_columns(fd, &tmp, (ssize_t)menu->selected,
+	    &menu->rows, &menu->cols);
+	refresh_line(fd, display_prompt, sb, *pos, show_suggestion);
+}
+
+static size_t
+menu_move_vertical(const struct menu_state *menu, int dir)
+{
+	size_t idx = menu->selected;
+	size_t count = menu->count;
+	size_t cols = (size_t)(menu->cols > 0 ? menu->cols : 1);
+	size_t col = idx % cols;
+	size_t cand;
+
+	if (dir > 0) {
+		cand = idx + cols;
+		if (cand < count)
+			return cand;
+		return col < count ? col : idx;
+	}
+
+	if (idx >= cols)
+		return idx - cols;
+
+	cand = col;
+	while (cand + cols < count)
+		cand += cols;
+	return cand;
+}
+
+static int
+lineedit_apply_completion(struct strbuf *sb, int *pos, const char *match, int append_space)
+{
+	int start;
+	int pfx_len;
+	size_t match_len;
+	size_t new_len;
+	size_t tail_len;
+
+	if (!match)
+		return 0;
+
+	start = word_start_at(sb->buf ? sb->buf : "", *pos);
+	pfx_len = *pos - start;
+	match_len = strlen(match);
+
+	if ((size_t)pfx_len > match_len)
+		return 0;
+
+	new_len = sb->len + (match_len - (size_t)pfx_len);
+	if (append_space)
+		new_len++;
+	strbuf_grow(sb, new_len - sb->len);
+
+	tail_len = sb->len - (size_t)*pos;
+	memmove(sb->buf + start + match_len, sb->buf + *pos, tail_len + 1);
+	memcpy(sb->buf + start, match, match_len);
+
+	if (append_space) {
+		memmove(sb->buf + start + match_len + 1, sb->buf + start + match_len, tail_len + 1);
+		sb->buf[start + match_len] = ' ';
+		*pos = (int)(start + match_len + 1);
+	} else {
+		*pos = (int)(start + match_len);
+	}
+
+	sb->len = new_len;
+	return 1;
 }
 
 char *
@@ -362,7 +670,11 @@ lineedit_read(const char *prompt)
 	int pos = 0;
 	int history_idx = history_count;
 	char *saved_current = NULL;
+	char *last_tab_line = NULL;
+	int last_tab_pos = -1;
+	struct menu_state menu = {0};
 	const char *display_prompt = prompt;
+	lineedit_debugf("begin prompt=%s", prompt ? prompt : "(null)");
 
 	if (!isatty(fd)) {
 		/* Fallback for non-tty */
@@ -377,6 +689,8 @@ lineedit_read(const char *prompt)
 		/* Print multiline prompt once; redraw only the last line. */
 		write(fd, prompt, strlen(prompt));
 		display_prompt = prompt_last_line(prompt);
+		lineedit_debugf("multiline display_prompt=%s",
+		    display_prompt ? display_prompt : "(null)");
 	}
 
 	enable_raw_mode(fd);
@@ -387,30 +701,76 @@ lineedit_read(const char *prompt)
 		for (;;) {
 		char c;
 		if (read(fd, &c, 1) <= 0) break;
+		lineedit_debugf("key=%u pos=%d len=%zu", (unsigned)c, pos, sb.len);
 
-		if (c == '\r' || c == '\n') {
-			strbuf_addch(&sb, '\n');
-			write(fd, "\n", 1);
-			break;
-		} else if (c == 1) { /* Ctrl-A (Home) */
-			pos = 0;
-			refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
-		} else if (c == 5) { /* Ctrl-E (End) */
-			pos = (int)sb.len;
-			refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
-		} else if (c == '\t') { /* Tab completion */
-			struct completion_result *cr = completion_get(sb.buf ? sb.buf : "", pos);
-			if (cr && cr->count > 0) {
-				int start = pos;
-				const char *buf = sb.buf ? sb.buf : "";
-				while (start > 0 && buf[start - 1] != ' ' && buf[start - 1] != '\t' &&
-				       buf[start - 1] != '|' && buf[start - 1] != ';' && buf[start - 1] != '&' &&
-				       buf[start - 1] != '<' && buf[start - 1] != '>') {
-					start--;
+			if (c == '\r' || c == '\n') {
+				menu_state_reset(&menu);
+				tab_state_clear(&last_tab_line, &last_tab_pos);
+				strbuf_addch(&sb, '\n');
+				write(fd, "\n", 1);
+				break;
+				} else if (c == 3) { /* Ctrl-C */
+					if (menu.active && menu.rows > 0)
+						menu_clear_block(fd, menu.rows);
+					menu_state_reset(&menu);
+					tab_state_clear(&last_tab_line, &last_tab_pos);
+				history_idx = history_count;
+					free(saved_current);
+					saved_current = NULL;
+					strbuf_reset(&sb);
+					pos = 0;
+					lineedit_debugf("ctrl-c in-place clear");
+					suppress_suggestion = 1;
+					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+					continue;
+				} else if (c == 1) { /* Ctrl-A (Home) */
+				pos = 0;
+				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+			} else if (c == 5) { /* Ctrl-E (End) */
+				pos = (int)sb.len;
+				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+			} else if (c == '\t') { /* Tab completion */
+				if (sb.len == 0 && pos == 0) {
+					menu_state_reset(&menu);
+					tab_state_clear(&last_tab_line, &last_tab_pos);
+					strbuf_addch(&sb, '\t');
+					pos = 1;
+					suppress_suggestion = 1;
+					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+					continue;
 				}
-				
-				int pfx_len = pos - start;
-				if (cr->common_len > (size_t)pfx_len) {
+
+				struct completion_result *cr = completion_get(sb.buf ? sb.buf : "", pos);
+				const char *buf = sb.buf ? sb.buf : "";
+			int start = word_start_at(buf, pos);
+			int pfx_len = pos - start;
+			int repeated_tab = (last_tab_line && last_tab_pos == pos &&
+			    strcmp(last_tab_line, buf) == 0);
+
+				if (cr && cr->count > 0) {
+					if (menu.active && menu.count > 1) {
+						menu.selected = (menu.selected + 1) % menu.count;
+						suppress_suggestion = 0;
+						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+						    !suppress_suggestion);
+					} else if (cr->count == 1) {
+						menu_state_reset(&menu);
+					size_t mlen = strlen(cr->matches[0]);
+					int append_space = 0;
+
+					if (mlen > 0 && cr->matches[0][mlen - 1] != '/') {
+						append_space = 1;
+					}
+					if (pos < (int)sb.len && buf[pos] != ' ' && buf[pos] != '\t' &&
+					    buf[pos] != '\n') {
+						append_space = 0;
+					}
+					if (lineedit_apply_completion(&sb, &pos, cr->matches[0], append_space)) {
+						suppress_suggestion = 0;
+						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+					}
+				} else if (cr->common_len > (size_t)pfx_len) {
+					menu_state_reset(&menu);
 					/* Add common prefix characters */
 					size_t to_add = cr->common_len - (size_t)pfx_len;
 					strbuf_grow(&sb, to_add);
@@ -423,21 +783,35 @@ lineedit_read(const char *prompt)
 					pos += (int)to_add;
 					suppress_suggestion = 0;
 					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
-				} else if (cr->count > 1) {
-					/* Show matches */
-					size_t i;
-					write(fd, "\n", 1);
-					for (i = 0; i < cr->count; i++) {
-						write(fd, cr->matches[i], strlen(cr->matches[i]));
-						write(fd, "  ", 2);
+				} else if (repeated_tab) {
+					menu_state_start(&menu, cr, &sb, pos);
+					if (lineedit_apply_completion(&sb, &pos, menu.matches[0], 0)) {
+						suppress_suggestion = 0;
 					}
+					/* Enter menu mode and show highlighted matches. */
 					write(fd, "\n", 1);
-					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+						{
+							struct completion_result tmp = {0};
+							tmp.matches = menu.matches;
+							tmp.count = menu.count;
+							lineedit_print_matches_columns(fd, &tmp, 0, &menu.rows, &menu.cols);
+						}
+						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+					} else {
+					menu_state_reset(&menu);
+					write(fd, "\a", 1);
 				}
+				tab_state_store(&last_tab_line, &last_tab_pos, &sb, pos);
+			} else {
+				menu_state_reset(&menu);
+				write(fd, "\a", 1);
+				tab_state_store(&last_tab_line, &last_tab_pos, &sb, pos);
 			}
 			completion_free(cr);
 			continue;
 		} else if (c == 127 || c == 8) { /* Backspace */
+			menu_state_reset(&menu);
+			tab_state_clear(&last_tab_line, &last_tab_pos);
 			if (pos > 0) {
 				pos--;
 				memmove(sb.buf + pos, sb.buf + pos + 1, sb.len - pos - 1);
@@ -447,8 +821,12 @@ lineedit_read(const char *prompt)
 				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			}
 		} else if (c == 4) { /* Ctrl-D */
+			menu_state_reset(&menu);
+			tab_state_clear(&last_tab_line, &last_tab_pos);
 			if (sb.len == 0) {
 				disable_raw_mode(fd);
+				menu_state_reset(&menu);
+				free(last_tab_line);
 				strbuf_free(&sb);
 				return NULL;
 			} else if (pos < (int)sb.len) {
@@ -459,6 +837,8 @@ lineedit_read(const char *prompt)
 				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			}
 		} else if (c == 21) { /* Ctrl-U (clear line) */
+			menu_state_reset(&menu);
+			tab_state_clear(&last_tab_line, &last_tab_pos);
 			pos = 0;
 			sb.len = 0;
 			if (sb.buf) sb.buf[0] = '\0';
@@ -470,6 +850,46 @@ lineedit_read(const char *prompt)
 			if (read(fd, &seq[1], 1) <= 0) break;
 
 			if (seq[0] == '[') {
+				if (menu.active && menu.count > 1) {
+					if (seq[1] == 'Z') { /* Shift-Tab */
+						menu.selected = (menu.selected + menu.count - 1) % menu.count;
+						suppress_suggestion = 0;
+						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+						    !suppress_suggestion);
+						continue;
+					}
+					if (seq[1] == 'A') { /* Up */
+						menu.selected = menu_move_vertical(&menu, -1);
+						suppress_suggestion = 0;
+						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+						    !suppress_suggestion);
+						continue;
+					}
+					if (seq[1] == 'B') { /* Down */
+						menu.selected = menu_move_vertical(&menu, 1);
+						suppress_suggestion = 0;
+						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+						    !suppress_suggestion);
+						continue;
+					}
+					if (seq[1] == 'C') { /* Right */
+						menu.selected = (menu.selected + 1) % menu.count;
+						suppress_suggestion = 0;
+						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+						    !suppress_suggestion);
+						continue;
+					}
+					if (seq[1] == 'D') { /* Left */
+						menu.selected = (menu.selected + menu.count - 1) % menu.count;
+						suppress_suggestion = 0;
+						menu_apply_and_render(fd, &menu, &sb, &pos, display_prompt,
+						    !suppress_suggestion);
+						continue;
+					}
+				}
+
+				menu_state_reset(&menu);
+				tab_state_clear(&last_tab_line, &last_tab_pos);
 				if (seq[1] == 'A') { /* Up arrow */
 					if (history_idx > 0) {
 						if (history_idx == history_count) {
@@ -528,9 +948,13 @@ lineedit_read(const char *prompt)
 				} else if (seq[1] == 'F') { /* End */
 					pos = (int)sb.len;
 					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+				} else if (seq[1] == 'Z') { /* Shift-Tab */
+					write(fd, "\a", 1);
 				}
 			}
 		} else if ((unsigned char)c >= 32 && (unsigned char)c <= 126) {
+			menu_state_reset(&menu);
+			tab_state_clear(&last_tab_line, &last_tab_pos);
 			strbuf_grow(&sb, 1);
 			if (pos < (int)sb.len) {
 				memmove(sb.buf + pos + 1, sb.buf + pos, sb.len - pos);
@@ -546,9 +970,12 @@ lineedit_read(const char *prompt)
 	}
 
 	disable_raw_mode(fd);
+	menu_state_reset(&menu);
+	free(last_tab_line);
 	free(saved_current);
 
 	if (sb.len == 0) {
+		lineedit_debugf("return NULL (empty)");
 		strbuf_free(&sb);
 		return NULL;
 	}
@@ -562,6 +989,7 @@ lineedit_read(const char *prompt)
 			history_add(trimmed);
 			free(trimmed);
 		}
+		lineedit_debugf("return line len=%zu", strlen(res));
 		return res;
 	}
 }

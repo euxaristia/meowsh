@@ -183,9 +183,8 @@ skip_blanks(void)
 static void
 continuation_prompt(void)
 {
-	if (sh.interactive && ps2_str) {
-		fputs(ps2_str, stderr);
-		fflush(stderr);
+	if (sh.interactive) {
+		sh.cur_prompt = ps2_str;
 	}
 }
 
@@ -308,6 +307,7 @@ read_word(int first_char)
 					sb.buf[sb.len] = '\0';
 				continuation_prompt();
 				c = nextchar();
+				if (c < 0) break;
 				continue;
 			}
 			strbuf_addch(&sb, (char)c);
@@ -344,8 +344,14 @@ read_word(int first_char)
 					strbuf_addch(&sb, (char)c);
 					if (nc >= 0)
 						strbuf_addch(&sb, (char)nc);
-					if (nc == '\n')
+					if (nc == '\n') {
 						continuation_prompt();
+						c = nextchar();
+						if (c < 0) goto done;
+						continue;
+					}
+					c = nextchar();
+					if (c < 0) goto done;
 					continue;
 				}
 				strbuf_addch(&sb, (char)c);
@@ -386,6 +392,8 @@ read_word(int first_char)
 									if (c == '(') depth++;
 									else if (c == ')') depth--;
 								}
+								c = nextchar();
+								if (c < 0) goto done;
 								continue;
 							}
 							pushback(nnc);
@@ -407,6 +415,9 @@ read_word(int first_char)
 								}
 							}
 						}
+						c = nextchar();
+						if (c < 0) goto done;
+						continue;
 					} else if (nc == '{') {
 						strbuf_addch(&sb, (char)nc);
 						for (;;) {
@@ -437,6 +448,8 @@ read_word(int first_char)
 					c = nextchar();
 					if (c >= 0)
 						strbuf_addch(&sb, (char)c);
+					c = nextchar();
+					if (c < 0) break;
 					continue;
 				}
 				if (c == '`')
@@ -670,7 +683,7 @@ lexer_read_token(void)
 		strbuf_addch(&digits, (char)c);
 		for (;;) {
 			int nc = nextchar();
-			if (isdigit((unsigned char)nc)) {
+			if (nc >= 0 && isdigit((unsigned char)nc)) {
 				strbuf_addch(&digits, (char)nc);
 			} else if (nc == '<' || nc == '>') {
 				/* This is an IO_NUMBER */
@@ -685,22 +698,14 @@ lexer_read_token(void)
 				/* Not IO_NUMBER, push everything back */
 				if (nc >= 0)
 					pushback(nc);
-				{
-					/* Put non-digit chars back and read as word */
-					size_t i;
-					/* We already have digits in strbuf, continue as word */
-					/* Actually we need to read the rest as a word.
-					 * The simplest approach: reconstruct from digits buf */
-					(void)i;
-					c = digits.buf[0];
-					if (digits.len > 1) {
-						/* Push back all chars except first */
-						for (i = digits.len - 1; i >= 1; i--)
-							pushback((unsigned char)digits.buf[i]);
-					}
-					strbuf_free(&digits);
-					goto read_as_word;
+				
+				/* Push back all digits except the first one */
+				for (size_t i = digits.len - 1; i >= 1; i--) {
+					pushback((unsigned char)digits.buf[i]);
 				}
+				c = digits.buf[0];
+				strbuf_free(&digits);
+				goto read_as_word;
 			}
 		}
 	}

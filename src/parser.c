@@ -664,11 +664,6 @@ parse_command(const char *ps1, const char *ps2)
 	lexer_init();
 	lexer_set_prompts(ps1, ps2);
 
-	if (sh.interactive && ps1) {
-		fputs(ps1, stderr);
-		fflush(stderr);
-	}
-
 	if (peek_type() == TOK_NEWLINE) {
 		next_token();
 		return NULL;
