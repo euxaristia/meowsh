@@ -399,6 +399,20 @@ word_start_at(const char *buf, int pos)
 	return start;
 }
 
+static int
+line_is_whitespace_only(const struct strbuf *sb)
+{
+	size_t i;
+
+	if (!sb || !sb->buf || sb->len == 0)
+		return 1;
+	for (i = 0; i < sb->len; i++) {
+		if (sb->buf[i] != ' ' && sb->buf[i] != '\t')
+			return 0;
+	}
+	return 1;
+}
+
 static void
 tab_state_clear(char **last_tab_line, int *last_tab_pos)
 {
@@ -758,11 +772,11 @@ lineedit_read(const char *prompt)
 					continue;
 				}
 
-				if (sb.len == 0 && pos == 0) {
+				if (line_is_whitespace_only(&sb)) {
 					menu_deactivate(fd, &menu);
 					tab_state_clear(&last_tab_line, &last_tab_pos);
 					strbuf_addch(&sb, '\t');
-					pos = 1;
+					pos = (int)sb.len;
 					suppress_suggestion = 1;
 					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					continue;
