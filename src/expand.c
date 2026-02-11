@@ -365,6 +365,7 @@ expand_cmdsub(const char *cmd)
 			if (tree)
 				exec_node(tree, 0);
 		}
+		fflush(NULL);
 		_exit(sh.last_status);
 	}
 

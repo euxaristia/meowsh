@@ -21,12 +21,16 @@
 #define INPUT_BUFSZ 1024
 
 static int unget_char = -1;
+static int last_col_before_newline = 1;
 
 void
 input_init(void)
 {
 	sh.input = NULL;
 	unget_char = -1;
+	last_col_before_newline = 1;
+	sh.lineno = 1;
+	sh.colno = 1;
 }
 
 static struct input_source *
@@ -190,8 +194,13 @@ input_getc(void)
 			return -1;
 		}
 		is->u.string.pos++;
-		if (c == '\n')
+		if (c == '\n') {
+			last_col_before_newline = sh.colno;
 			sh.lineno++;
+			sh.colno = 1;
+		} else {
+			sh.colno++;
+		}
 		return c;
 	}
 
@@ -201,8 +210,13 @@ input_getc(void)
 			return -1;
 	}
 	c = (unsigned char)is->buf[is->bufpos++];
-	if (c == '\n')
+	if (c == '\n') {
+		last_col_before_newline = sh.colno;
 		sh.lineno++;
+		sh.colno = 1;
+	} else {
+		sh.colno++;
+	}
 	return c;
 }
 
@@ -211,8 +225,12 @@ input_ungetc(int c)
 {
 	if (c < 0)
 		return;
-	if (c == '\n')
+	if (c == '\n') {
 		sh.lineno--;
+		sh.colno = last_col_before_newline;
+	} else if (sh.colno > 1) {
+		sh.colno--;
+	}
 	unget_char = c;
 }
 

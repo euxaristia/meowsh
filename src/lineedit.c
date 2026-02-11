@@ -10,6 +10,7 @@
 #include "completion.h"
 #include "builtin.h"
 #include "alias.h"
+#include "exec.h"
 #include "memalloc.h"
 #include "mystring.h"
 #include "var.h"
@@ -148,59 +149,24 @@ disable_raw_mode(int fd)
 static int
 command_exists_for_highlight(const char *token)
 {
-	const char *path;
-
 	if (!token || !*token)
 		return 0;
 
-	if (builtin_lookup(token) || alias_get(token))
+	if (alias_get(token))
 		return 1;
 
 	if (strchr(token, '/'))
 		return access(token, X_OK) == 0;
 
-	path = var_get("PATH");
-	if (path && *path) {
-		const char *pp, *end;
-		size_t token_len = strlen(token);
-		char fullpath[PATH_MAX];
-
-		for (pp = path; ; pp = end + 1) {
-			end = strchr(pp, ':');
-			if (!end)
-				end = pp + strlen(pp);
-
-			if (end == pp) {
-				if (2 + token_len >= sizeof(fullpath)) {
-					if (*end == '\0')
-						break;
-					continue;
-				}
-				fullpath[0] = '.';
-				fullpath[1] = '/';
-				memcpy(fullpath + 2, token, token_len);
-				fullpath[2 + token_len] = '\0';
-			} else {
-				size_t dir_len = (size_t)(end - pp);
-				if (dir_len + 1 + token_len >= sizeof(fullpath)) {
-					if (*end == '\0')
-						break;
-					continue;
-				}
-				memcpy(fullpath, pp, dir_len);
-				fullpath[dir_len] = '/';
-				memcpy(fullpath + dir_len + 1, token, token_len);
-				fullpath[dir_len + 1 + token_len] = '\0';
-			}
-
-			if (access(fullpath, X_OK) == 0)
-				return 1;
-			if (*end == '\0')
-				break;
+	{
+		struct cmd_entry entry;
+		find_command(token, &entry);
+		if (entry.type == CMD_EXTERNAL) {
+			free(entry.u.path);
+			return 1;
 		}
+		return entry.type != CMD_NOT_FOUND;
 	}
-
-	return 0;
 }
 
 static void

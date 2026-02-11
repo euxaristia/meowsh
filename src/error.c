@@ -18,8 +18,12 @@ sh_vmsg(const char *prefix, const char *fmt, va_list ap)
 	const char *name = sh.argv0 ? sh.argv0 : "meowsh";
 
 	fprintf(stderr, "%s: ", name);
-	if (sh.lineno > 0 && !sh.interactive)
-		fprintf(stderr, "line %d: ", sh.lineno);
+	if (sh.lineno > 0) {
+		if (sh.colno > 0)
+			fprintf(stderr, "line %d, col %d: ", sh.lineno, sh.colno);
+		else
+			fprintf(stderr, "line %d: ", sh.lineno);
+	}
 	if (prefix)
 		fprintf(stderr, "%s: ", prefix);
 	vfprintf(stderr, fmt, ap);

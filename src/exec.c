@@ -551,6 +551,7 @@ exec_pipeline(struct node *n)
 				close(pipefd[0]);
 
 			exec_node(cmds[i], 0);
+			fflush(NULL);
 			_exit(sh.last_status);
 		}
 
@@ -614,6 +615,7 @@ exec_subshell(struct node *body, struct redirect *redirs, int flags)
 		}
 
 		exec_node(body, 0);
+		fflush(NULL);
 		_exit(sh.last_status);
 	}
 

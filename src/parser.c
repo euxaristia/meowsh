@@ -42,6 +42,7 @@ static struct node *p_compound_command(void);
 static struct redirect *p_redirect(void);
 static struct redirect *p_redirect_list(void);
 static struct word *p_word_token(struct token *tok);
+static void token_desc(const struct token *tok, char *buf, size_t size);
 
 static void
 next_token(void)
@@ -69,9 +70,11 @@ static void
 expect(token_type_t type)
 {
 	if (!accept(type)) {
-		sh_syntax("expected '%s', got '%s'",
+		char got[128];
+		token_desc(lexer_peek(), got, sizeof(got));
+		sh_syntax("expected '%s', got %s",
 		    token_name(type),
-		    token_name(lexer_peek()->type));
+		    got);
 	}
 }
 
@@ -132,6 +135,30 @@ is_redirect(token_type_t t)
 	}
 }
 
+static void
+token_desc(const struct token *tok, char *buf, size_t size)
+{
+	const char *name;
+	const char *val;
+
+	if (!buf || size == 0)
+		return;
+
+	if (!tok) {
+		snprintf(buf, size, "'%s'", "EOF");
+		return;
+	}
+
+	name = token_name(tok->type);
+	val = tok->value;
+
+	if (val && *val) {
+		snprintf(buf, size, "'%s' (%s)", val, name);
+	} else {
+		snprintf(buf, size, "'%s'", name);
+	}
+}
+
 static struct word *
 p_word_token(struct token *tok)
 {
@@ -170,7 +197,11 @@ p_redirect(void)
 	case TOK_DLESS:     rtype = REDIR_HEREDOC; if (fd < 0) fd = 0; break;
 	case TOK_DLESSDASH: rtype = REDIR_HEREDOC_STRIP; if (fd < 0) fd = 0; break;
 	default:
-		sh_syntax("unexpected token in redirection");
+		{
+			char got[128];
+			token_desc(lexer_peek(), got, sizeof(got));
+			sh_syntax("unexpected token in redirection: %s", got);
+		}
 		return NULL;
 	}
 
@@ -482,14 +513,19 @@ try_function_def(void)
 	expect(TOK_RPAREN);
 	skip_newlines();
 
-	{
-		struct node *body = p_compound_command();
-		if (!body) {
-			sh_syntax("expected compound command in function definition");
-			return NULL;
+		{
+			struct node *body = p_compound_command();
+			if (!body) {
+				{
+					char got[128];
+					token_desc(lexer_peek(), got, sizeof(got));
+					sh_syntax("expected compound command in function definition, got %s",
+					    got);
+				}
+				return NULL;
+			}
+			return ast_func_def(name, body, p_redirect_list());
 		}
-		return ast_func_def(name, body, p_redirect_list());
-	}
 }
 
 static struct node *
@@ -550,13 +586,17 @@ p_pipeline(void)
 		return NULL;
 	cmds[ncmds++] = cmd;
 
-	while (accept(TOK_PIPE)) {
-		skip_newlines();
-		cmd = p_command();
-		if (!cmd) {
-			sh_syntax("expected command after '|'");
-			break;
-		}
+		while (accept(TOK_PIPE)) {
+			skip_newlines();
+			cmd = p_command();
+			if (!cmd) {
+				{
+					char got[128];
+					token_desc(lexer_peek(), got, sizeof(got));
+					sh_syntax("expected command after '|', got %s", got);
+				}
+				break;
+			}
 		if (ncmds >= MAX_PIPELINE) {
 			sh_error("pipeline too long");
 			break;
@@ -588,12 +628,17 @@ p_and_or(void)
 			break;
 
 		skip_newlines();
-		right = p_pipeline();
-		if (!right) {
-			sh_syntax("expected command after '%s'",
-			    conn == CONN_AND ? "&&" : "||");
-			return left;
-		}
+			right = p_pipeline();
+			if (!right) {
+				{
+					char got[128];
+					token_desc(lexer_peek(), got, sizeof(got));
+					sh_syntax("expected command after '%s', got %s",
+					    conn == CONN_AND ? "&&" : "||",
+					    got);
+				}
+				return left;
+			}
 		left = ast_and_or(left, right, conn);
 	}
 	return left;

@@ -27,6 +27,12 @@ var_init(void)
 	/* Set default IFS */
 	var_set("IFS", " \t\n", 0);
 
+	/*
+	 * Keep a usable command search path even if the parent environment is
+	 * sparse (common for login managers/system shells).
+	 */
+	var_set("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 0);
+
 	/* Set default PS1 */
 	var_set("PS1", "meowsh % ", 0);
 

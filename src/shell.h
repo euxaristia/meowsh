@@ -129,6 +129,7 @@ struct shell_state {
 
 	/* Line number */
 	int lineno;
+	int colno;
 
 	/* History */
 	char *history_file;

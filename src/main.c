@@ -474,6 +474,8 @@ main(int argc, char **argv)
 
 	shell_init();
 	sh.argv0 = argv[0];
+	if (sh.argv0 && sh.argv0[0] == '-')
+		sh.login_shell = 1;
 
 	/* Import environment */
 	{

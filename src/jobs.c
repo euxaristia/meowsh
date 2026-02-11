@@ -22,6 +22,12 @@ jobs_init(void)
 	sh.next_job_id = 1;
 
 	if (sh.interactive && option_is_set(OPT_MONITOR)) {
+		/* Ignore job control signals in the shell */
+		sh_signal(SIGTSTP, SIG_IGN);
+		sh_signal(SIGTTIN, SIG_IGN);
+		sh_signal(SIGTTOU, SIG_IGN);
+		sh_signal(SIGCHLD, sigchld_handler);
+
 		/* Put shell in its own process group */
 		sh.shell_pgid = getpid();
 		if (setpgid(sh.shell_pgid, sh.shell_pgid) < 0) {
@@ -34,11 +40,6 @@ jobs_init(void)
 			}
 		}
 
-		/* Ignore job control signals in the shell */
-		sh_signal(SIGTSTP, SIG_IGN);
-		sh_signal(SIGTTIN, SIG_IGN);
-		sh_signal(SIGTTOU, SIG_IGN);
-		sh_signal(SIGCHLD, sigchld_handler);
 	}
 }
 
