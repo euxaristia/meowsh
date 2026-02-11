@@ -309,7 +309,7 @@ build_starship_prompt(int status)
 static char *
 with_meow_marker(const char *prompt)
 {
-	const char *marker = "🐱";
+	const char *marker = "🐱 ";
 	const char *insert_at;
 	const char *style_prefix_end;
 	const char *p;
@@ -414,7 +414,7 @@ main_loop(void)
 				} else {
 						shorten_path(short_pwd, pwd, sizeof(short_pwd));
 						snprintf(ps1_buf, sizeof(ps1_buf),
-						    "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 🐱",
+						    "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 🐱 ",
 						    user, short_pwd);
 						sh.ps1 = ps1_buf;
 					}
@@ -423,13 +423,13 @@ main_loop(void)
 
 					/* Fish-style prompt: [user] /s/p/path $ */
 					snprintf(ps1_buf, sizeof(ps1_buf),
-					    "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 🐱",
+					    "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 🐱 ",
 					    user, short_pwd);
 					sh.ps1 = ps1_buf;
 				} else {
 					sh.ps1 = cfg_ps1;
 				}
-				ps2 = cfg_ps2 && *cfg_ps2 ? cfg_ps2 : "🐱";
+				ps2 = cfg_ps2 && *cfg_ps2 ? cfg_ps2 : "🐱 ";
 			sh.ps2 = ps2;
 			sh.cur_prompt = sh.ps1;
 		} else {
