@@ -122,16 +122,25 @@ struct shell_state {
 	int dot_depth;          /* for . (source) */
 	int errexit_suppressed; /* in condition context */
 
+	/* Prompts */
+	const char *ps1;
+	const char *ps2;
+	const char *cur_prompt;
+
 	/* Line number */
 	int lineno;
 
 	/* History */
 	char *history_file;
+
+	/* Prompt engine */
+	int starship_enabled;
 };
 
 extern struct shell_state sh;
 
 /* ---- Common functions ---- */
 unsigned int hash_string(const char *s);
+void shorten_path(char *dst, const char *src, size_t size);
 
 #endif /* MEOWSH_SHELL_H */

@@ -11,6 +11,7 @@
 #include "memalloc.h"
 #include "mystring.h"
 #include "lineedit.h"
+#include "expand.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,11 +120,23 @@ input_refill(struct input_source *is)
 	switch (is->type) {
 	case INPUT_FD:
 		if (sh.interactive && is->u.fd == STDIN_FILENO) {
-			char *line = lineedit_read(NULL);
+			char *prompt = NULL;
+			const char *rendered_prompt = sh.cur_prompt;
+			char *line;
+
+			if (rendered_prompt) {
+				prompt = expand_heredoc(rendered_prompt);
+				rendered_prompt = prompt;
+			}
+
+			line = lineedit_read(rendered_prompt);
+			free(prompt);
 			if (!line) {
 				is->eof = 1;
 				return -1;
 			}
+			/* Reset prompt to PS1 for next time unless lexer changes it */
+			sh.cur_prompt = sh.ps1;
 			free(is->buf);
 			is->buf = line;
 			is->buflen = strlen(line);

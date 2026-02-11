@@ -7,6 +7,9 @@
 
 #include "shell.h"
 #include "lineedit.h"
+#include "completion.h"
+#include "builtin.h"
+#include "alias.h"
 #include "memalloc.h"
 #include "mystring.h"
 #include "var.h"
@@ -77,24 +80,180 @@ disable_raw_mode(int fd)
 }
 
 static void
-refresh_line(int fd, struct strbuf *sb, int pos)
+refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos, int show_suggestion)
 {
-	/* Write from cursor to end */
-	if (sb->buf && pos < (int)sb->len) {
-		write(fd, sb->buf + pos, sb->len - pos);
-	}
+	struct strbuf colored = STRBUF_INIT;
+	const char *line = sb->buf ? sb->buf : "";
+	const char *p = line;
+	int in_quote = 0;
+	char quote_char = 0;
+	const char *suggestion = NULL;
+	size_t cmd_start = 0, cmd_len = 0;
+	int cmd_unknown = 0;
+	size_t i;
 
-	/* Clear to end of line */
-	write(fd, "\x1b[K", 3);
-
-	/* Move cursor back to pos */
-	/* We just printed (len - pos) chars */
+	/* Determine whether first command token is unknown for red highlighting. */
 	{
-		int i;
-		for (i = 0; i < (int)sb->len - pos; i++) {
-			write(fd, "\b", 1);
+		size_t len = strlen(line);
+		size_t s = 0;
+		size_t e;
+		const char *path;
+		const char *pp, *end;
+		char token[PATH_MAX];
+		size_t token_len = 0;
+
+		while (s < len && (line[s] == ' ' || line[s] == '\t'))
+			s++;
+		e = s;
+		while (e < len &&
+		    line[e] != ' ' && line[e] != '\t' &&
+		    line[e] != '|' && line[e] != '&' &&
+		    line[e] != ';' && line[e] != '<' &&
+		    line[e] != '>') {
+			e++;
+		}
+
+		if (e > s && (e - s) < sizeof(token)) {
+			memcpy(token, line + s, e - s);
+			token[e - s] = '\0';
+			token_len = e - s;
+
+			if (!strchr(token, '=') || strchr(token, '/')) {
+				if (!builtin_lookup(token) && !alias_get(token)) {
+					if (strchr(token, '/')) {
+						cmd_unknown = access(token, X_OK) != 0;
+					} else {
+						cmd_unknown = 1;
+						path = var_get("PATH");
+						if (path && *path) {
+							char fullpath[PATH_MAX];
+							for (pp = path; ; pp = end + 1) {
+								end = strchr(pp, ':');
+								if (!end)
+									end = pp + strlen(pp);
+								if (end == pp) {
+									if (2 + token_len >= sizeof(fullpath)) {
+										if (*end == '\0')
+											break;
+										continue;
+									}
+									fullpath[0] = '.';
+									fullpath[1] = '/';
+									memcpy(fullpath + 2, token, token_len);
+									fullpath[2 + token_len] = '\0';
+								} else {
+									size_t dir_len = (size_t)(end - pp);
+									if (dir_len + 1 + token_len >= sizeof(fullpath)) {
+										if (*end == '\0')
+											break;
+										continue;
+									}
+									memcpy(fullpath, pp, dir_len);
+									fullpath[dir_len] = '/';
+									memcpy(fullpath + dir_len + 1, token, token_len);
+									fullpath[dir_len + 1 + token_len] = '\0';
+								}
+								if (access(fullpath, X_OK) == 0) {
+									cmd_unknown = 0;
+									break;
+								}
+								if (*end == '\0')
+									break;
+							}
+						}
+					}
+				}
+			}
+
+			if (cmd_unknown) {
+				cmd_start = s;
+				cmd_len = e - s;
+			}
 		}
 	}
+	
+	/* Go to beginning of line, print prompt */
+	write(fd, "\r", 1);
+	if (prompt) write(fd, prompt, strlen(prompt));
+
+	/* Find suggestion if at end of line */
+	if (show_suggestion && pos == (int)sb->len && sb->len > 0) {
+		int i;
+		for (i = history_count - 1; i >= 0; i--) {
+			if (prefix(history[i], sb->buf)) {
+				suggestion = history[i] + sb->len;
+				break;
+			}
+		}
+	}
+
+	/* Highlight words: builtins in blue, paths in cyan etc. */
+	/* For now: simple quotes and comments */
+	while (*p) {
+		i = (size_t)(p - line);
+		if (!in_quote && cmd_unknown && i == cmd_start) {
+			size_t k;
+			strbuf_addstr(&colored, "\x1b[31m"); /* Red */
+			for (k = 0; k < cmd_len && p[k]; k++)
+				strbuf_addch(&colored, p[k]);
+			strbuf_addstr(&colored, "\x1b[0m");
+			p += cmd_len;
+		} else if (!in_quote && (*p == '\'' || *p == '"')) {
+			in_quote = 1;
+			quote_char = *p;
+			strbuf_addstr(&colored, "\x1b[33m"); /* Yellow */
+			strbuf_addch(&colored, *p++);
+		} else if (in_quote && *p == quote_char) {
+			strbuf_addch(&colored, *p++);
+			strbuf_addstr(&colored, "\x1b[0m");
+			in_quote = 0;
+		} else if (!in_quote && *p == '#') {
+			strbuf_addstr(&colored, "\x1b[32m"); /* Green */
+			while (*p) strbuf_addch(&colored, *p++);
+			strbuf_addstr(&colored, "\x1b[0m");
+		} else {
+			strbuf_addch(&colored, *p++);
+		}
+	}
+	if (in_quote) strbuf_addstr(&colored, "\x1b[0m");
+
+	/* Ghost suggestion in gray */
+	if (suggestion && *suggestion) {
+		strbuf_addstr(&colored, "\x1b[90m"); /* Dark gray */
+		strbuf_addstr(&colored, suggestion);
+		strbuf_addstr(&colored, "\x1b[0m");
+	}
+
+	if (colored.buf) write(fd, colored.buf, colored.len);
+	write(fd, "\x1b[K", 3); /* Clear to end */
+
+	/* Move cursor back to pos */
+	write(fd, "\r", 1);
+	if (prompt) write(fd, prompt, strlen(prompt));
+	{
+		int i;
+		for (i = 0; i < pos; i++) {
+			if (sb->buf && sb->buf[i] == '\t') write(fd, "    ", 4);
+			else write(fd, "\x1b[C", 3);
+		}
+	}
+	strbuf_free(&colored);
+}
+
+static const char *
+prompt_last_line(const char *prompt)
+{
+	const char *last = prompt;
+	const char *p;
+
+	if (!prompt)
+		return NULL;
+
+	for (p = prompt; *p; p++) {
+		if (*p == '\n')
+			last = p + 1;
+	}
+	return last;
 }
 
 char *
@@ -105,6 +264,7 @@ lineedit_read(const char *prompt)
 	int pos = 0;
 	int history_idx = history_count;
 	char *saved_current = NULL;
+	const char *display_prompt = prompt;
 
 	if (!isatty(fd)) {
 		/* Fallback for non-tty */
@@ -115,14 +275,18 @@ lineedit_read(const char *prompt)
 		return NULL;
 	}
 
-	if (prompt) {
-		fputs(prompt, stderr);
-		fflush(stderr);
+	if (prompt && strchr(prompt, '\n')) {
+		/* Print multiline prompt once; redraw only the last line. */
+		write(fd, prompt, strlen(prompt));
+		display_prompt = prompt_last_line(prompt);
 	}
 
 	enable_raw_mode(fd);
+	{
+		int suppress_suggestion = 0;
+		refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 
-	for (;;) {
+		for (;;) {
 		char c;
 		if (read(fd, &c, 1) <= 0) break;
 
@@ -130,28 +294,78 @@ lineedit_read(const char *prompt)
 			strbuf_addch(&sb, '\n');
 			write(fd, "\n", 1);
 			break;
+		} else if (c == 1) { /* Ctrl-A (Home) */
+			pos = 0;
+			refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+		} else if (c == 5) { /* Ctrl-E (End) */
+			pos = (int)sb.len;
+			refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+		} else if (c == '\t') { /* Tab completion */
+			struct completion_result *cr = completion_get(sb.buf ? sb.buf : "", pos);
+			if (cr && cr->count > 0) {
+				int start = pos;
+				const char *buf = sb.buf ? sb.buf : "";
+				while (start > 0 && buf[start - 1] != ' ' && buf[start - 1] != '\t' &&
+				       buf[start - 1] != '|' && buf[start - 1] != ';' && buf[start - 1] != '&' &&
+				       buf[start - 1] != '<' && buf[start - 1] != '>') {
+					start--;
+				}
+				
+				int pfx_len = pos - start;
+				if (cr->common_len > (size_t)pfx_len) {
+					/* Add common prefix characters */
+					size_t to_add = cr->common_len - (size_t)pfx_len;
+					strbuf_grow(&sb, to_add);
+					if (pos < (int)sb.len) {
+						memmove(sb.buf + pos + to_add, sb.buf + pos, sb.len - pos);
+					}
+					memcpy(sb.buf + pos, cr->matches[0] + pfx_len, to_add);
+					sb.len += to_add;
+					sb.buf[sb.len] = '\0';
+					pos += (int)to_add;
+					suppress_suggestion = 0;
+					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+				} else if (cr->count > 1) {
+					/* Show matches */
+					size_t i;
+					write(fd, "\n", 1);
+					for (i = 0; i < cr->count; i++) {
+						write(fd, cr->matches[i], strlen(cr->matches[i]));
+						write(fd, "  ", 2);
+					}
+					write(fd, "\n", 1);
+					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+				}
+			}
+			completion_free(cr);
+			continue;
 		} else if (c == 127 || c == 8) { /* Backspace */
 			if (pos > 0) {
 				pos--;
 				memmove(sb.buf + pos, sb.buf + pos + 1, sb.len - pos - 1);
 				sb.len--;
-				write(fd, "\b", 1);
-				refresh_line(fd, &sb, pos);
+				sb.buf[sb.len] = '\0';
+				suppress_suggestion = 1;
+				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			}
 		} else if (c == 4) { /* Ctrl-D */
 			if (sb.len == 0) {
 				disable_raw_mode(fd);
 				strbuf_free(&sb);
 				return NULL;
+			} else if (pos < (int)sb.len) {
+				memmove(sb.buf + pos, sb.buf + pos + 1, sb.len - pos - 1);
+				sb.len--;
+				sb.buf[sb.len] = '\0';
+				suppress_suggestion = 1;
+				refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 			}
 		} else if (c == 21) { /* Ctrl-U (clear line) */
-			while (pos > 0) {
-				write(fd, "\b", 1);
-				pos--;
-			}
-			write(fd, "\x1b[K", 3); /* Clear line */
+			pos = 0;
 			sb.len = 0;
-			/* Reset buffer but keep capacity */
+			if (sb.buf) sb.buf[0] = '\0';
+			suppress_suggestion = 1;
+			refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 		} else if (c == 27) { /* Escape sequence */
 			char seq[3];
 			if (read(fd, &seq[0], 1) <= 0) break;
@@ -164,28 +378,15 @@ lineedit_read(const char *prompt)
 							saved_current = sh_strdup(sb.buf ? sb.buf : "");
 						}
 						history_idx--;
-						/* Clear current line on screen */
-						while (pos > 0) {
-							write(fd, "\b", 1);
-							pos--;
-						}
-						write(fd, "\x1b[K", 3);
-						
 						strbuf_free(&sb);
 						strbuf_addstr(&sb, history[history_idx]);
-						if (sb.buf) write(fd, sb.buf, sb.len);
 						pos = (int)sb.len;
+						suppress_suggestion = 0;
+						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					}
 				} else if (seq[1] == 'B') { /* Down arrow */
 					if (history_idx < history_count) {
 						history_idx++;
-						/* Clear current line */
-						while (pos > 0) {
-							write(fd, "\b", 1);
-							pos--;
-						}
-						write(fd, "\x1b[K", 3);
-						
 						strbuf_free(&sb);
 						if (history_idx == history_count) {
 							if (saved_current) {
@@ -196,19 +397,39 @@ lineedit_read(const char *prompt)
 						} else {
 							strbuf_addstr(&sb, history[history_idx]);
 						}
-						if (sb.buf) write(fd, sb.buf, sb.len);
 						pos = (int)sb.len;
+						suppress_suggestion = 0;
+						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					}
 				} else if (seq[1] == 'D') { /* Left arrow */
 					if (pos > 0) {
 						pos--;
-						write(fd, "\b", 1);
+						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 					}
 				} else if (seq[1] == 'C') { /* Right arrow */
 					if (pos < (int)sb.len) {
 						pos++;
-						write(fd, "\x1b[C", 3);
+						refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+					} else {
+						/* Accept suggestion if any */
+						int i;
+						for (i = history_count - 1; i >= 0; i--) {
+							if (prefix(history[i], sb.buf ? sb.buf : "")) {
+								strbuf_reset(&sb);
+								strbuf_addstr(&sb, history[i]);
+								pos = (int)sb.len;
+								suppress_suggestion = 0;
+								refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+								break;
+							}
+						}
 					}
+				} else if (seq[1] == 'H') { /* Home */
+					pos = 0;
+					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
+				} else if (seq[1] == 'F') { /* End */
+					pos = (int)sb.len;
+					refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 				}
 			}
 		} else if ((unsigned char)c >= 32 && (unsigned char)c <= 126) {
@@ -218,11 +439,12 @@ lineedit_read(const char *prompt)
 			}
 			sb.buf[pos] = c;
 			sb.len++;
-			
-			write(fd, &c, 1);
+			sb.buf[sb.len] = '\0';
 			pos++;
-			refresh_line(fd, &sb, pos);
+			suppress_suggestion = 0;
+			refresh_line(fd, display_prompt, &sb, pos, !suppress_suggestion);
 		}
+	}
 	}
 
 	disable_raw_mode(fd);
@@ -250,7 +472,7 @@ void
 lineedit_print_history(void)
 {
 	int i;
-	for (i = 0; i < history_count; i++) {
+	for (i = history_count - 1; i >= 0; i--) {
 		printf("%5d  %s\n", i + 1, history[i]);
 	}
 }

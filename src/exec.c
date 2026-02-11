@@ -478,7 +478,7 @@ exec_simple_cmd(struct node *n, int flags)
 		break;
 
 	case CMD_NOT_FOUND:
-		sh_error("%s: not found", argv[0]);
+		sh_error("app or command %s: not found", argv[0]);
 		status = 127;
 		break;
 	}
@@ -655,6 +655,10 @@ exec_node(struct node *n, int flags)
 		break;
 
 	case NODE_AND_OR:
+		if (!n->data.and_or.left || !n->data.and_or.right) {
+			status = 1;
+			break;
+		}
 		status = exec_node(n->data.and_or.left, 0);
 		if (n->data.and_or.conn == CONN_AND) {
 			if (status == 0) {
@@ -719,6 +723,10 @@ exec_node(struct node *n, int flags)
 	case NODE_IF:
 		{
 			int old_suppress = sh.errexit_suppressed;
+			if (!n->data.if_cmd.cond || !n->data.if_cmd.then_body) {
+				sh.last_status = 1;
+				return 1;
+			}
 			sh.errexit_suppressed = 1;
 			status = exec_node(n->data.if_cmd.cond, 0);
 			sh.errexit_suppressed = old_suppress;
@@ -737,6 +745,10 @@ exec_node(struct node *n, int flags)
 	case NODE_WHILE:
 		{
 			struct saved_fd *saved = NULL;
+			if (!n->data.loop.cond || !n->data.loop.body) {
+				sh.last_status = 1;
+				return 1;
+			}
 			if (n->data.loop.redirs) {
 				saved = redir_apply(n->data.loop.redirs);
 				if (!saved && n->data.loop.redirs) {
@@ -781,6 +793,10 @@ exec_node(struct node *n, int flags)
 	case NODE_UNTIL:
 		{
 			struct saved_fd *saved = NULL;
+			if (!n->data.loop.cond || !n->data.loop.body) {
+				sh.last_status = 1;
+				return 1;
+			}
 			if (n->data.loop.redirs) {
 				saved = redir_apply(n->data.loop.redirs);
 				if (!saved && n->data.loop.redirs) {
@@ -827,6 +843,11 @@ exec_node(struct node *n, int flags)
 			struct saved_fd *saved = NULL;
 			char **words;
 			int wc, wi;
+
+			if (!n->data.for_cmd.body) {
+				sh.last_status = 1;
+				return 1;
+			}
 
 			if (n->data.for_cmd.redirs) {
 				saved = redir_apply(n->data.for_cmd.redirs);
