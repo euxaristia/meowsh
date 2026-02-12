@@ -42,7 +42,7 @@ run_tty_case "  echo HI_FROM_INTERACTIVE\nexit\n" "$log1" env -i PATH="$PATH" HO
 strip_ansi <"$log1" >"$tmpdir/case1.stripped"
 grep -F "HI_FROM_INTERACTIVE" "$tmpdir/case1.stripped" >/dev/null
 
-echo "2) ENV is not sourced by default in interactive mode"
+echo "2) ENV is sourced by default in interactive mode"
 rc="$tmpdir/rc.sh"
 cat >"$rc" <<'EOF'
 echo RC_LOADED_DEFAULT
@@ -50,18 +50,16 @@ EOF
 log2="$tmpdir/case2.log"
 run_tty_case "exit\n" "$log2" env -i PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc"
 strip_ansi <"$log2" >"$tmpdir/case2.stripped"
-if grep -Fq "RC_LOADED_DEFAULT" "$tmpdir/case2.stripped"; then
-  echo "FAIL: ENV was sourced without MEOWSH_SOURCE_ENV=1" >&2
-  exit 1
-fi
+grep -F "RC_LOADED_DEFAULT" "$tmpdir/case2.stripped" >/dev/null
 
-echo "3) ENV is sourced when explicitly enabled"
-cat >"$rc" <<'EOF'
-echo RC_LOADED_OPTIN
+echo "3) empty PS1 from ENV falls back to a visible default prompt"
+rc_empty_ps1="$tmpdir/rc-empty-ps1.sh"
+cat >"$rc_empty_ps1" <<'EOF'
+PS1=''
 EOF
 log3="$tmpdir/case3.log"
-run_tty_case "exit\n" "$log3" env -i PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc" MEOWSH_SOURCE_ENV=1
+run_tty_case "exit\n" "$log3" env -i PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc_empty_ps1"
 strip_ansi <"$log3" >"$tmpdir/case3.stripped"
-grep -F "RC_LOADED_OPTIN" "$tmpdir/case3.stripped" >/dev/null
+grep -F "🐱 " "$tmpdir/case3.stripped" >/dev/null
 
 echo "Interactive regression tests passed."

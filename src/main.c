@@ -20,6 +20,7 @@
 #include "jobs.h"
 #include "alias.h"
 #include "lineedit.h"
+#include "expand.h"
 
 #include <locale.h>
 #include <sys/ioctl.h>
@@ -104,19 +105,31 @@ setup_interactive(void)
 }
 
 static void
+ensure_default_ps1(void)
+{
+	const char *ps1 = var_get("PS1");
+
+	if (!ps1 || !*ps1)
+		var_set("PS1", "meowsh % ", 0);
+}
+
+static void
 source_profile(void)
 {
+	const char *env = var_get("ENV");
+	char *expanded_env = NULL;
+
 	/*
 	 * input_push_* uses a stack (LIFO), so push startup files in reverse
 	 * of desired execution order.
 	 */
-	if (sh.interactive) {
-		const char *allow_env = var_get("MEOWSH_SOURCE_ENV");
-		const char *env = var_get("ENV");
-		if (allow_env && strcmp(allow_env, "1") == 0 &&
-		    env && *env && access(env, R_OK) == 0)
-			input_push_file(env);
+	if (env && *env) {
+		expanded_env = expand_heredoc(env);
+		if (expanded_env && *expanded_env &&
+		    access(expanded_env, R_OK) == 0)
+			input_push_file(expanded_env);
 	}
+	free(expanded_env);
 
 	if (sh.login_shell) {
 		/* $HOME/.profile should run after /etc/profile */
@@ -483,6 +496,9 @@ main_loop(void)
 		arena_free(&parse_arena);
 
 		if (sh.interactive) {
+			/* ENV/profile commands may blank PS1 after startup; keep prompt usable. */
+			ensure_default_ps1();
+
 			const char *cfg_ps1 = var_get("PS1");
 			const char *cfg_ps2 = var_get("PS2");
 			const char *pwd = var_get("PWD");
@@ -611,6 +627,8 @@ main(int argc, char **argv)
 		/* -c mode */
 		int idx = -optind;
 		const char *cmd = argv[idx];
+		size_t cmdlen;
+		char *cmdline;
 
 		if (idx + 1 < argc)
 			sh.argv0 = argv[idx + 1];
@@ -619,7 +637,14 @@ main(int argc, char **argv)
 		if (idx + 2 < argc)
 			var_set_posparams(argc - idx - 2, argv + idx + 2);
 
-		input_push_string(cmd);
+		cmdlen = strlen(cmd);
+		cmdline = sh_malloc(cmdlen + 2);
+		memcpy(cmdline, cmd, cmdlen);
+		cmdline[cmdlen] = '\n';
+		cmdline[cmdlen + 1] = '\0';
+		input_push_string(cmdline);
+		free(cmdline);
+		source_profile();
 		main_loop();
 		input_pop();
 		return sh.last_status;
@@ -634,6 +659,7 @@ main(int argc, char **argv)
 			var_set_posparams(argc - optind - 1, argv + optind + 1);
 
 		input_push_file(script);
+		source_profile();
 		if (!sh.input)
 			return 127;
 		main_loop();
@@ -649,6 +675,8 @@ main(int argc, char **argv)
 	if (sh.interactive)
 		input_push_fd(STDIN_FILENO);
 	source_profile();
+	if (sh.interactive)
+		ensure_default_ps1();
 	ensure_user_path_entries();
 	maybe_init_starship();
 
