@@ -540,24 +540,24 @@ type Token struct {
 }
 
 type ASTNode struct {
-	Type     string
-	Value    string
-	Args     []string
-	Assigns  map[string]string
-	Redirs   []Redir
-	Cond     *ASTNode
-	Body     *ASTNode
-	Else     *ASTNode
-	LoopVar  string
-	LoopBody string
-	Cases    []CaseItem
-	FuncName string
-	FuncBody *ASTNode
-	Left     *ASTNode
-	Right    *ASTNode
-	Conn     string
-	Bang     bool
-	Pipes    []*ASTNode
+	Type      string
+	Value     string
+	Args      []string
+	Assigns   map[string]string
+	Redirs    []Redir
+	Cond      *ASTNode
+	Body      *ASTNode
+	Else      *ASTNode
+	LoopVar   string
+	LoopWords []string
+	Cases     []CaseItem
+	FuncName  string
+	FuncBody  *ASTNode
+	Left      *ASTNode
+	Right     *ASTNode
+	Conn      string
+	Bang      bool
+	Pipes     []*ASTNode
 }
 
 type Redir struct {
@@ -760,7 +760,7 @@ func parseFor(tokens []Token, pos int) (*ASTNode, int) {
 		pos++
 	}
 
-	return &ASTNode{Type: "for", LoopVar: varName, Body: bodyNode}, pos + 1
+	return &ASTNode{Type: "for", LoopVar: varName, LoopWords: words, Body: bodyNode}, pos + 1
 }
 
 func parseCase(tokens []Token, pos int) (*ASTNode, int) {
@@ -1174,12 +1174,12 @@ func execNode(node *ASTNode) int {
 }
 
 func execSimple(node *ASTNode) int {
-	if len(node.Args) == 0 {
+	if len(node.Args) == 0 && len(node.Assigns) == 0 {
 		return 0
 	}
 
 	for name, value := range node.Assigns {
-		varSet(name, value, false)
+		varSet(name, expandAll(value), false)
 	}
 
 	expandedArgs := make([]string, len(node.Args))
@@ -1191,8 +1191,7 @@ func execSimple(node *ASTNode) int {
 		return 0
 	}
 
-	name := expandedArgs[0]
-
+	name := node.Args[0]
 	if alias, ok := sh.Aliases[name]; ok {
 		parts := strings.Fields(alias)
 		expandedArgs = append(parts, expandedArgs[1:]...)
@@ -1341,17 +1340,14 @@ func execUntil(node *ASTNode) int {
 }
 
 func execFor(node *ASTNode) int {
-	var words []string
-	if len(node.Body.Pipes) > 0 && node.Body.Pipes[0].Type == "simple" {
-		words = node.Body.Pipes[0].Args
-	}
+	words := node.LoopWords
 
 	if len(words) == 0 {
 		words = sh.PosParams
 	}
 
 	for _, word := range words {
-		sh.Vars[node.LoopVar] = Var{Value: word, Flags: 0}
+		sh.Vars[node.LoopVar] = Var{Value: expandAll(word), Flags: 0}
 		execNode(node.Body)
 	}
 	return 0
@@ -2162,6 +2158,24 @@ func builtinUlimit(args []string) int {
 	return 0
 }
 
+func expandAliasLine(line string) string {
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return line
+	}
+
+	firstWord := words[0]
+	if alias, ok := sh.Aliases[firstWord]; ok {
+		rest := strings.Join(words[1:], " ")
+		if rest != "" {
+			return alias + " " + rest
+		}
+		return alias
+	}
+
+	return line
+}
+
 func mainLoop() {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -2183,6 +2197,8 @@ func mainLoop() {
 		}
 
 		sh.Lineno++
+
+		line = expandAliasLine(line)
 
 		tokens := tokenize(line)
 		node, _ := parseCommand(tokens, 0)
