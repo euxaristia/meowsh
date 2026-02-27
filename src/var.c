@@ -234,22 +234,22 @@ var_set_posparams(int argc, char **argv)
 	struct posparams *pp;
 	int i;
 
-	/* Free old if at top level */
-	if (sh.posparams && !sh.posparams->prev) {
+	if (sh.posparams) {
 		for (i = 0; i < sh.posparams->argc; i++)
 			free(sh.posparams->argv[i]);
 		free(sh.posparams->argv);
-		free(sh.posparams);
+		pp = sh.posparams;
+	} else {
+		pp = sh_malloc(sizeof(*pp));
+		pp->prev = NULL;
+		sh.posparams = pp;
 	}
 
-	pp = sh_malloc(sizeof(*pp));
 	pp->argc = argc;
 	pp->argv = sh_malloc((argc + 1) * sizeof(char *));
 	for (i = 0; i < argc; i++)
 		pp->argv[i] = sh_strdup(argv[i]);
 	pp->argv[argc] = NULL;
-	pp->prev = NULL;
-	sh.posparams = pp;
 }
 
 void

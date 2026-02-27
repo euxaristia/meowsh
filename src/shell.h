@@ -121,6 +121,7 @@ struct shell_state {
 	int want_return;
 	int dot_depth;          /* for . (source) */
 	int errexit_suppressed; /* in condition context */
+	int parse_error;        /* syntax error flag */
 
 	/* Prompts */
 	const char *ps1;

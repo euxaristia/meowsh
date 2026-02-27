@@ -162,6 +162,20 @@ jobs_reap(void)
 		job_update_status(pid, status);
 }
 
+void
+jobs_notify(void)
+{
+	struct job *j;
+
+	jobs_reap();
+	for (j = sh.jobs; j; j = j->next) {
+		if ((j->state == JOB_DONE || j->state == JOB_STOPPED) && !j->notified) {
+			job_print(j, 0, stderr);
+			j->notified = 1;
+		}
+	}
+}
+
 struct job *
 job_by_id(int id)
 {

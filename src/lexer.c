@@ -225,6 +225,19 @@ queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
 	*pp = hd;
 }
 
+void
+lexer_clear_heredocs(void)
+{
+	struct heredoc_pending *hd, *next;
+
+	for (hd = pending_heredocs; hd; hd = next) {
+		next = hd->next;
+		free(hd->delim);
+		free(hd);
+	}
+	pending_heredocs = NULL;
+}
+
 char *
 lexer_read_heredoc(const char *delim, int strip_tabs, int quoted)
 {

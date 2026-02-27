@@ -155,7 +155,7 @@ complete_path(struct completion_result *cr, const char *pfx, int dirs_only)
 	char *word_prefix;
 	DIR *dir;
 	struct dirent *de;
-	char *slash = strrchr(pfx, '/');
+	const char *slash = strrchr(pfx, '/');
 	int show_dotfiles;
 
 	if (slash) {

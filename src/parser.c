@@ -59,7 +59,7 @@ peek_type(void)
 static int
 accept(token_type_t type)
 {
-	if (peek_type() == type) {
+	if ((token_type_t)peek_type() == type) {
 		next_token();
 		return 1;
 	}
@@ -69,6 +69,8 @@ accept(token_type_t type)
 static void
 expect(token_type_t type)
 {
+	if (sh.parse_error)
+		return;
 	if (!accept(type)) {
 		char got[128];
 		token_desc(lexer_peek(), got, sizeof(got));
@@ -81,7 +83,7 @@ expect(token_type_t type)
 static void
 skip_newlines(void)
 {
-	while (peek_type() == TOK_NEWLINE)
+	while (peek_type() == TOK_NEWLINE && !sh.parse_error)
 		next_token();
 }
 
@@ -389,8 +391,7 @@ p_for_clause(void)
 			next_token();
 			word_list_append(&words, p_word_token(curtok));
 		}
-		if (!accept(TOK_SEMI))
-			;
+		accept(TOK_SEMI);
 		skip_newlines();
 	} else if (accept(TOK_SEMI)) {
 		skip_newlines();
@@ -706,6 +707,9 @@ p_list(int top_level)
 struct node *
 parse_command(const char *ps1, const char *ps2)
 {
+	struct node *n;
+
+	sh.parse_error = 0;
 	lexer_init();
 	lexer_set_prompts(ps1, ps2);
 
@@ -715,5 +719,9 @@ parse_command(const char *ps1, const char *ps2)
 	}
 	if (peek_type() == TOK_EOF)
 		return NULL;
-	return p_list(1);
+
+	n = p_list(1);
+	if (sh.parse_error)
+		return NULL;
+	return n;
 }

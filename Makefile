@@ -1,4 +1,4 @@
-CC = gcc
+CC = clang
 CFLAGS = -Wall -Wextra -Wno-unused-parameter -Isrc -g -O2 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
 LDFLAGS = 
 PREFIX ?= /usr/local

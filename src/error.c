@@ -66,6 +66,7 @@ sh_syntax(const char *fmt, ...)
 	va_start(ap, fmt);
 	sh_vmsg("syntax error", fmt, ap);
 	va_end(ap);
+	sh.parse_error = 1;
 	if (!sh.interactive)
 		exit(2);
 	sh.last_status = 2;

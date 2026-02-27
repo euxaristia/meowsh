@@ -33,6 +33,9 @@ char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted);
 void queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
     int quoted);
 
+/* Clear pending heredocs (on syntax error or reset) */
+void lexer_clear_heredocs(void);
+
 /* Enable/disable alias expansion in the lexer */
 void lexer_set_alias(int enable);
 

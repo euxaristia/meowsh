@@ -488,11 +488,14 @@ main_loop(void)
 		/* Process any pending traps */
 		trap_check();
 
-		/* Check for dead children */
-		if (sh.interactive)
-			jobs_reap();
+		/* Check for dead children and clean up job table */
+		if (sh.interactive) {
+			jobs_notify();
+			jobs_cleanup();
+		}
 
 		/* Parse one complete command */
+		lexer_clear_heredocs();
 		arena_free(&parse_arena);
 
 		if (sh.interactive) {

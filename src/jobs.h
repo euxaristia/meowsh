@@ -57,6 +57,9 @@ int job_wait_fg(struct job *j);
 /* Reap background jobs */
 void jobs_reap(void);
 
+/* Print status of changed jobs and mark as notified */
+void jobs_notify(void);
+
 /* Lookup job by id or pid */
 struct job *job_by_id(int id);
 struct job *job_by_pid(pid_t pid);
