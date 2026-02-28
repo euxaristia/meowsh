@@ -70,8 +70,11 @@ search_path(const char *name)
 	struct stat st;
 
 	if (strchr(name, '/')) {
-		if (access(name, X_OK) == 0)
+		int fd = open(name, O_RDONLY | O_NOFOLLOW);
+		if (fd >= 0) {
+			close(fd);
 			return sh_strdup(name);
+		}
 		return NULL;
 	}
 
@@ -79,8 +82,11 @@ search_path(const char *name)
 	{
 		const char *cached = hash_lookup(name);
 		if (cached) {
-			if (access(cached, X_OK) == 0)
+			int fd = open(cached, O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
 				return sh_strdup(cached);
+			}
 			/* Stale cache entry — fall through */
 		}
 	}
@@ -102,11 +108,14 @@ search_path(const char *name)
 			    (int)(end - p), p, name);
 		}
 
-		if (stat(fullpath, &st) == 0 && S_ISREG(st.st_mode) &&
-		    access(fullpath, X_OK) == 0) {
-			if (option_is_set(OPT_HASHALL))
-				hash_insert(name, fullpath);
-			return sh_strdup(fullpath);
+		if (stat(fullpath, &st) == 0 && S_ISREG(st.st_mode)) {
+			int fd = open(fullpath, O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
+				if (option_is_set(OPT_HASHALL))
+					hash_insert(name, fullpath);
+				return sh_strdup(fullpath);
+			}
 		}
 
 		if (*end == '\0')

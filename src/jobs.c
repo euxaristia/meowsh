@@ -12,6 +12,7 @@
 #include "compat.h"
 #include "sh_error.h"
 #include "memalloc.h"
+#include "mystring.h"
 
 #include <stdio.h>
 
@@ -341,8 +342,11 @@ job_parse_spec(const char *spec)
 			}
 			return prev;
 		}
-		if (isdigit((unsigned char)*spec))
-			return job_by_id(atoi(spec));
+		if (isdigit((unsigned char)*spec)) {
+			char *endp;
+			int id = (int)sh_strtol(spec, &endp, 10);
+			return job_by_id(id);
+		}
 		/* Match by command prefix */
 		{
 			struct job *j;

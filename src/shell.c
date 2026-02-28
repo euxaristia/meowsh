@@ -33,8 +33,11 @@ shorten_path(char *dst, const char *src, size_t size)
 	if (home && home[0] && prefix(src, home)) {
 		buf[0] = '~';
 		size_t hlen = strlen(home);
-		strncpy(buf + 1, src + hlen, sizeof(buf) - 2);
-		buf[sizeof(buf) - 1] = '\0';
+		size_t copy_len = strlen(src + hlen);
+		if (copy_len > sizeof(buf) - 2)
+			copy_len = sizeof(buf) - 2;
+		memcpy(buf + 1, src + hlen, copy_len);
+		buf[copy_len + 1] = '\0';
 		p = buf;
 	} else {
 		p = src;

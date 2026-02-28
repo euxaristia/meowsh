@@ -182,7 +182,8 @@ p_redirect(void)
 
 	if (peek_type() == TOK_IO_NUMBER) {
 		next_token();
-		fd = atoi(curtok->value);
+		char *endp;
+		fd = (int)sh_strtol(curtok->value, &endp, 10);
 	}
 
 	next_token();

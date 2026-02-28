@@ -32,6 +32,7 @@ static const struct builtin_entry builtins[] = {
 	{ "bg",       builtin_bg,       0 },
 	{ "cd",       builtin_cd,       0 },
 	{ "command",  builtin_command,  0 },
+	{ "echo",     builtin_echo,     0 },
 	{ "false",    builtin_false,    0 },
 	{ "fc",       builtin_fc,       0 },
 	{ "fg",       builtin_fg,       0 },

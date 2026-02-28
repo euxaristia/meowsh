@@ -34,5 +34,6 @@ int is_number(const char *s);
 int is_assignment(const char *s);    /* name=... */
 int prefix(const char *s, const char *pfx);
 char *sh_stpcpy(char *dst, const char *src);
+long sh_strtol(const char *s, char **endp, int base);
 
 #endif /* MEOWSH_MYSTRING_H */

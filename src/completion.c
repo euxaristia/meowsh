@@ -229,7 +229,9 @@ complete_exe_in_dir(struct completion_result *cr, const char *dir_path, const ch
 		if (prefix(de->d_name, pfx)) {
 			char full[PATH_MAX];
 			snprintf(full, sizeof(full), "%s/%s", dir_path, de->d_name);
-			if (access(full, X_OK) == 0) {
+			int fd = open(full, O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
 				add_match(cr, de->d_name);
 			}
 		}

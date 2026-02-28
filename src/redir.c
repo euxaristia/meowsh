@@ -12,6 +12,7 @@
 #include "sh_error.h"
 #include "memalloc.h"
 #include "compat.h"
+#include "mystring.h"
 
 #include <fcntl.h>
 #include <string.h>
@@ -140,7 +141,8 @@ redir_apply(struct redirect *redirs)
 			if (strcmp(filename, "-") == 0) {
 				close(fd);
 			} else {
-				newfd = atoi(filename);
+				char *endp;
+				newfd = (int)sh_strtol(filename, &endp, 10);
 				if (dup2(newfd, fd) < 0) {
 					sh_errorf("dup2");
 					free(filename);

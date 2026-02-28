@@ -29,7 +29,8 @@ builtin_break(int argc, char **argv)
 	int n = 1;
 
 	if (argc > 1) {
-		n = atoi(argv[1]);
+		char *endp;
+		n = (int)sh_strtol(argv[1], &endp, 10);
 		if (n < 1) n = 1;
 	}
 
@@ -58,7 +59,8 @@ builtin_continue(int argc, char **argv)
 	int n = 1;
 
 	if (argc > 1) {
-		n = atoi(argv[1]);
+		char *endp;
+		n = (int)sh_strtol(argv[1], &endp, 10);
 		if (n < 1) n = 1;
 	}
 
@@ -103,7 +105,9 @@ builtin_dot(int argc, char **argv)
 					snprintf(fullpath, sizeof(fullpath),
 					    "%.*s/%s", (int)(end - p), p,
 					    filename);
-				if (access(fullpath, R_OK) == 0) {
+				int fd = open(fullpath, O_RDONLY | O_NOFOLLOW);
+				if (fd >= 0) {
+					close(fd);
 					filename = fullpath;
 					goto found;
 				}
@@ -114,9 +118,13 @@ builtin_dot(int argc, char **argv)
 	}
 
 found:
-	if (access(filename, R_OK) != 0) {
-		sh_errorf("%s", filename);
-		return 1;
+	{
+		int fd = open(filename, O_RDONLY | O_NOFOLLOW);
+		if (fd < 0) {
+			sh_errorf("%s", filename);
+			return 1;
+		}
+		close(fd);
 	}
 
 	/* Push positional params if extra args */
@@ -222,7 +230,9 @@ builtin_exec(int argc, char **argv)
 				if (!end) end = p + strlen(p);
 				snprintf(fp, sizeof(fp), "%.*s/%s",
 				    (int)(end - p), p, argv[1]);
-				if (access(fp, X_OK) == 0) {
+			int fd = open(fp, O_RDONLY | O_NOFOLLOW);
+				if (fd >= 0) {
+					close(fd);
 					path = sh_strdup(fp);
 					break;
 				}
@@ -250,8 +260,10 @@ builtin_exit(int argc, char **argv)
 {
 	int status = sh.last_status;
 
-	if (argc > 1)
-		status = atoi(argv[1]);
+	if (argc > 1) {
+		char *endp;
+		status = (int)sh_strtol(argv[1], &endp, 10);
+	}
 
 	exit(status & 0xff);
 	return status; /* not reached */
@@ -346,8 +358,10 @@ builtin_return(int argc, char **argv)
 		return 1;
 	}
 
-	if (argc > 1)
-		status = atoi(argv[1]);
+	if (argc > 1) {
+		char *endp;
+		status = (int)sh_strtol(argv[1], &endp, 10);
+	}
 
 	sh.last_status = status & 0xff;
 	sh.want_return = 1;
@@ -420,7 +434,8 @@ builtin_shift(int argc, char **argv)
 	int n = 1;
 
 	if (argc > 1) {
-		n = atoi(argv[1]);
+		char *endp;
+		n = (int)sh_strtol(argv[1], &endp, 10);
 		if (n < 0) {
 			sh_error("shift: bad number");
 			return 1;

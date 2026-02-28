@@ -24,12 +24,14 @@
 
 #include <locale.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <stdarg.h>
 
 static FILE *main_debug_fp;
 static int main_debug_inited;
 
 static void
+__attribute__((format (printf, 1, 2)))
 main_debugf(const char *fmt, ...)
 {
 	const char *enabled;
@@ -125,9 +127,13 @@ source_profile(void)
 	 */
 	if (env && *env) {
 		expanded_env = expand_heredoc(env);
-		if (expanded_env && *expanded_env &&
-		    access(expanded_env, R_OK) == 0)
-			input_push_file(expanded_env);
+		if (expanded_env && *expanded_env) {
+			int fd = open(expanded_env, O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
+				input_push_file(expanded_env);
+			}
+		}
 	}
 	free(expanded_env);
 
@@ -138,12 +144,20 @@ source_profile(void)
 			if (home) {
 				char path[PATH_MAX];
 				snprintf(path, sizeof(path), "%s/.profile", home);
-				if (access(path, R_OK) == 0)
+				int fd = open(path, O_RDONLY | O_NOFOLLOW);
+				if (fd >= 0) {
+					close(fd);
 					input_push_file(path);
+				}
 			}
 		}
-		if (access("/etc/profile", R_OK) == 0)
-			input_push_file("/etc/profile");
+		{
+			int fd = open("/etc/profile", O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
+				input_push_file("/etc/profile");
+			}
+		}
 	}
 }
 
@@ -157,8 +171,14 @@ command_in_path(const char *name)
 	if (!name || !*name)
 		return 0;
 
-	if (strchr(name, '/'))
-		return access(name, X_OK) == 0;
+	if (strchr(name, '/')) {
+		int fd = open(name, O_RDONLY | O_NOFOLLOW);
+		if (fd >= 0) {
+			close(fd);
+			return 1;
+		}
+		return 0;
+	}
 
 	if (!path || !*path)
 		return 0;
@@ -172,8 +192,13 @@ command_in_path(const char *name)
 		else
 			snprintf(fullpath, sizeof(fullpath), "%.*s/%s",
 			    (int)(end - p), p, name);
-		if (access(fullpath, X_OK) == 0)
-			return 1;
+		{
+			int fd = open(fullpath, O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
+				return 1;
+			}
+		}
 		if (*end == '\0')
 			break;
 	}
@@ -247,12 +272,20 @@ ensure_user_path_entries(void)
 		return;
 
 	path = var_get("PATH");
-	if (access(home_bin, F_OK) == 0 && !path_has_entry(path, home_bin))
-		path_prepend_entry(home_bin);
+	{
+		struct stat st;
+		if (stat(home_bin, &st) == 0 && S_ISDIR(st.st_mode) &&
+		    !path_has_entry(path, home_bin))
+			path_prepend_entry(home_bin);
+	}
 
 	path = var_get("PATH");
-	if (access(local_bin, F_OK) == 0 && !path_has_entry(path, local_bin))
-		path_prepend_entry(local_bin);
+	{
+		struct stat st;
+		if (stat(local_bin, &st) == 0 && S_ISDIR(st.st_mode) &&
+		    !path_has_entry(path, local_bin))
+			path_prepend_entry(local_bin);
+	}
 }
 
 static int
@@ -447,9 +480,13 @@ with_meow_marker(const char *prompt)
 	    (unsigned char)p[2] == 0xAF) {
 		p += 3;
 		matched = 1;
-	} else if (*p == '>' || *p == '$') {
-		p++;
-		matched = 1;
+	} else if (*p == '>' || *p == '$' ||
+	           ((unsigned char)p[0] == 0x27 && (unsigned char)p[1] == 0x6f)) {
+		/* Some environments might represent ❯ differently or we check for common symbols */
+		if (*p == '>' || *p == '$') {
+			p++;
+			matched = 1;
+		}
 	}
 	if (matched) {
 		while (*p == ' ' || *p == '\t')

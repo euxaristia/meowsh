@@ -9,6 +9,7 @@
 #include "memalloc.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -175,4 +176,14 @@ sh_stpcpy(char *dst, const char *src)
 		src++;
 	}
 	return dst;
+}
+
+long
+sh_strtol(const char *s, char **endp, int base)
+{
+	errno = 0;
+	long val = strtol(s, endp, base);
+	if (errno == ERANGE || *endp == s || (*endp && **endp != '\0'))
+		return 0;
+	return val;
 }

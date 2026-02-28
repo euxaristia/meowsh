@@ -6,6 +6,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "compat.h"
+#include "shell.h"
+#include "mystring.h"
 
 #include <dirent.h>
 
@@ -41,7 +43,10 @@ sh_closefrom(int lowfd)
 				int fd;
 				if (ent->d_name[0] == '.')
 					continue;
-				fd = atoi(ent->d_name);
+				char *endp;
+				fd = (int)sh_strtol(ent->d_name, &endp, 10);
+				if (*endp != '\0')
+					continue;
 				if (fd >= lowfd && fd != dirfd(d))
 					close(fd);
 			}

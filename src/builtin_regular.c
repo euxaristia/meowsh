@@ -199,10 +199,12 @@ builtin_command(int argc, char **argv)
 					if (!end) end = p + strlen(p);
 					snprintf(fp, sizeof(fp), "%.*s/%s",
 					    (int)(end - p), p, argv[i]);
-					if (access(fp, X_OK) == 0) {
-						path = sh_strdup(fp);
-						break;
-					}
+			int fd = open(fp, O_RDONLY | O_NOFOLLOW);
+			if (fd >= 0) {
+				close(fd);
+				path = sh_strdup(fp);
+				break;
+			}
 					if (*end == '\0') break;
 				}
 			}
@@ -312,7 +314,14 @@ builtin_getopts(int argc, char **argv)
 	}
 
 	optind_str = var_get("OPTIND");
-	optind_val = optind_str ? atoi(optind_str) : 1;
+	if (optind_str) {
+		char *endp;
+		optind_val = (int)sh_strtol(optind_str, &endp, 10);
+		if (*endp != '\0')
+			optind_val = 1;
+	} else {
+		optind_val = 1;
+	}
 
 	if (optind_val < 1 || optind_val > nargs) {
 		var_set(varname, "?", 0);
@@ -563,7 +572,8 @@ builtin_kill(int argc, char **argv)
 				sh_error("kill: %s: no such job", argv[i]);
 			}
 		} else {
-			pid_t pid = (pid_t)atol(argv[i]);
+			char *endp;
+			pid_t pid = (pid_t)sh_strtol(argv[i], &endp, 10);
 			if (kill(pid, sig) < 0)
 				sh_errorf("kill");
 		}
@@ -907,6 +917,29 @@ builtin_unalias(int argc, char **argv)
 	return status;
 }
 
+/* echo [arguments...] */
+int
+builtin_echo(int argc, char **argv)
+{
+	int i;
+	int newline = 1;
+
+	i = 1;
+	if (i < argc && strcmp(argv[i], "-n") == 0) {
+		newline = 0;
+		i++;
+	}
+
+	for (; i < argc; i++) {
+		printf("%s%s", argv[i], (i + 1 < argc) ? " " : "");
+	}
+
+	if (newline)
+		printf("\n");
+
+	return 0;
+}
+
 /* meow */
 int
 builtin_meow(int argc, char **argv)
@@ -948,7 +981,8 @@ builtin_wait(int argc, char **argv)
 				status = 127;
 			}
 		} else {
-			pid_t pid = (pid_t)atol(argv[i]);
+			char *endp;
+			pid_t pid = (pid_t)sh_strtol(argv[i], &endp, 10);
 			int wstatus;
 			if (waitpid(pid, &wstatus, 0) < 0) {
 				status = 127;

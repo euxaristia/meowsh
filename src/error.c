@@ -13,6 +13,7 @@
 #include <stdlib.h>
 
 static void
+__attribute__((format (printf, 2, 0)))
 sh_vmsg(const char *prefix, const char *fmt, va_list ap)
 {
 	const char *name = sh.argv0 ? sh.argv0 : "meowsh";
@@ -32,6 +33,7 @@ sh_vmsg(const char *prefix, const char *fmt, va_list ap)
 }
 
 void
+__attribute__((format (printf, 1, 2)))
 sh_error(const char *fmt, ...)
 {
 	va_list ap;
@@ -41,6 +43,7 @@ sh_error(const char *fmt, ...)
 }
 
 void
+__attribute__((format (printf, 1, 2)))
 sh_warn(const char *fmt, ...)
 {
 	va_list ap;
@@ -50,7 +53,9 @@ sh_warn(const char *fmt, ...)
 }
 
 void
+__attribute__((format (printf, 1, 2)))
 sh_fatal(const char *fmt, ...)
+
 {
 	va_list ap;
 	va_start(ap, fmt);
@@ -60,6 +65,7 @@ sh_fatal(const char *fmt, ...)
 }
 
 void
+__attribute__((format (printf, 1, 2)))
 sh_syntax(const char *fmt, ...)
 {
 	va_list ap;
@@ -73,6 +79,7 @@ sh_syntax(const char *fmt, ...)
 }
 
 void
+__attribute__((format (printf, 1, 2)))
 sh_errorf(const char *fmt, ...)
 {
 	va_list ap;

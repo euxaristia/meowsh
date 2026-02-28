@@ -112,6 +112,7 @@ static size_t lineedit_pending_len = 0;
 static size_t lineedit_pending_pos = 0;
 
 static void
+__attribute__((format (printf, 1, 2)))
 lineedit_debugf(const char *fmt, ...)
 {
 	const char *enabled;
@@ -283,8 +284,10 @@ command_exists_for_highlight(const char *token)
 	if (alias_get(token))
 		return 1;
 
-	if (strchr(token, '/'))
-		return access(token, X_OK) == 0;
+	if (strchr(token, '/')) {
+		int fd = open(token, O_RDONLY | O_NOFOLLOW);
+		return fd >= 0;
+	}
 
 	{
 		struct cmd_entry entry;
@@ -1156,7 +1159,7 @@ lineedit_read(const char *prompt)
 			free(last_submitted_line);
 			last_submitted_line = sh_strdup("");
 		}
-		lineedit_debugf("return line len=%zu", strlen(res));
+		lineedit_debugf("return line len=%zu", res ? strlen(res) : 0);
 		return res;
 	}
 }
