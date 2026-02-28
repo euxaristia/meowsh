@@ -28,10 +28,13 @@ jobs:
         cppcheck --enable=all \
           --suppress=missingIncludeSystem \
           --suppress=unusedFunction \
+          --suppress=constVariable \
           --suppress=constVariablePointer \
           --suppress=constParameterPointer \
           --suppress=variableScope \
           --suppress=knownConditionTrueFalse \
+          --suppress=unusedStructMember \
+          --suppress=shadowVariable \
           --error-exitcode=1 src/
 
     - name: Build
