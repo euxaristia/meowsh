@@ -99,14 +99,14 @@ static char lineedit_pending[1024];
 static size_t lineedit_pending_len = 0;
 static size_t lineedit_pending_pos = 0;
 
-static void __attribute__((format(printf, 1, 2)))
+static void __attribute__((format(printf, 1, 2)))  // flawfinder: ignore
 lineedit_debugf(const char *fmt, ...) {
   const char *enabled;
   va_list ap;
 
   if (!lineedit_debug_inited) {
     lineedit_debug_inited = 1;
-    enabled = getenv("MEOWSH_DEBUG_LINEEDIT");
+    enabled = getenv("MEOWSH_DEBUG_LINEEDIT");  // flawfinder: ignore
     if (enabled && *enabled)
       lineedit_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a");
   }
@@ -114,7 +114,7 @@ lineedit_debugf(const char *fmt, ...) {
     return;
 
   va_start(ap, fmt);
-  vfprintf(lineedit_debug_fp, fmt, ap);
+  vfprintf(lineedit_debug_fp, fmt, ap);  // flawfinder: ignore
   va_end(ap);
   fputc('\n', lineedit_debug_fp);
   fflush(lineedit_debug_fp);

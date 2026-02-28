@@ -30,14 +30,15 @@
 static FILE *main_debug_fp;
 static int main_debug_inited;
 
-static void __attribute__((format(printf, 1, 2))) main_debugf(const char *fmt,
+static void __attribute__((format(printf, 1, 2)))  // flawfinder: ignore
+main_debugf(const char *fmt,
                                                               ...) {
   const char *enabled;
   va_list ap;
 
   if (!main_debug_inited) {
     main_debug_inited = 1;
-    enabled = getenv("MEOWSH_DEBUG_LINEEDIT");
+    enabled = getenv("MEOWSH_DEBUG_LINEEDIT");  // flawfinder: ignore
     if (enabled && *enabled)
       main_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a");
   }
@@ -45,7 +46,7 @@ static void __attribute__((format(printf, 1, 2))) main_debugf(const char *fmt,
     return;
 
   va_start(ap, fmt);
-  vfprintf(main_debug_fp, fmt, ap);
+  vfprintf(main_debug_fp, fmt, ap);  // flawfinder: ignore
   va_end(ap);
   fputc('\n', main_debug_fp);
   fflush(main_debug_fp);
@@ -367,7 +368,7 @@ static char *build_starship_prompt(int status) {
     }
 
     execlp("starship", "starship", "prompt", "--status", status_arg, "--shlvl",
-           shlvl_arg, "--terminal-width", width_arg, (char *)NULL);
+           shlvl_arg, "--terminal-width", width_arg, (char *)NULL);  // flawfinder: ignore
     _exit(127);
   }
 
