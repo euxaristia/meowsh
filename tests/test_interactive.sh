@@ -20,7 +20,8 @@ if ! script -q -e -c "true" /dev/null >/dev/null 2>&1; then
 fi
 
 tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
+echo "Using tmpdir: $tmpdir"
+# trap 'rm -rf "$tmpdir"' EXIT
 
 strip_ansi() {
   sed -E $'s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g'

@@ -45,6 +45,7 @@ int builtin_alias(int argc, char **argv);
 int builtin_bg(int argc, char **argv);
 int builtin_cd(int argc, char **argv);
 int builtin_command(int argc, char **argv);
+int builtin_echo(int argc, char **argv);
 int builtin_false(int argc, char **argv);
 int builtin_fc(int argc, char **argv);
 int builtin_fg(int argc, char **argv);
