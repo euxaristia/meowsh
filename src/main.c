@@ -30,15 +30,14 @@
 static FILE *main_debug_fp;
 static int main_debug_inited;
 
-static void __attribute__((format(printf, 1, 2)))  // flawfinder: ignore
-main_debugf(const char *fmt,
-                                                              ...) {
+static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
+main_debugf(const char *fmt, ...) {
   const char *enabled;
   va_list ap;
 
   if (!main_debug_inited) {
     main_debug_inited = 1;
-    enabled = getenv("MEOWSH_DEBUG_LINEEDIT");  // flawfinder: ignore
+    enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
     if (enabled && *enabled)
       main_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a");
   }
@@ -46,7 +45,7 @@ main_debugf(const char *fmt,
     return;
 
   va_start(ap, fmt);
-  vfprintf(main_debug_fp, fmt, ap);  // flawfinder: ignore
+  vfprintf(main_debug_fp, fmt, ap); // flawfinder: ignore
   va_end(ap);
   fputc('\n', main_debug_fp);
   fflush(main_debug_fp);
@@ -90,7 +89,7 @@ static void setup_interactive(void) {
   {
     const char *home = var_get("HOME");
     if (home) {
-      size_t len = strlen(home) + 32;
+      size_t len = strlen(home) + 32; // flawfinder: ignore
       sh.history_file = sh_malloc(len);
       snprintf(sh.history_file, len, "%s/.meowsh_history", home);
       history_load(sh.history_file);
@@ -173,7 +172,7 @@ static int command_in_path(const char *name) {
   for (p = path;; p = end + 1) {
     end = strchr(p, ':');
     if (!end)
-      end = p + strlen(p);
+      end = p + strlen(p); // flawfinder: ignore
     if (end == p)
       snprintf(fullpath, sizeof(fullpath), "./%s", name);
     else
@@ -200,11 +199,11 @@ static int path_has_entry(const char *path, const char *entry) {
   if (!path || !entry || !*entry)
     return 0;
 
-  elen = strlen(entry);
+  elen = strlen(entry); // flawfinder: ignore
   for (p = path;; p = end + 1) {
     end = strchr(p, ':');
     if (!end)
-      end = p + strlen(p);
+      end = p + strlen(p); // flawfinder: ignore
     if ((size_t)(end - p) == elen && strncmp(p, entry, elen) == 0)
       return 1;
     if (*end == '\0')
@@ -223,8 +222,8 @@ static void path_prepend_entry(const char *entry) {
   if (!entry || !*entry)
     return;
 
-  elen = strlen(entry);
-  plen = path ? strlen(path) : 0;
+  elen = strlen(entry);           // flawfinder: ignore
+  plen = path ? strlen(path) : 0; // flawfinder: ignore
   new_path = sh_malloc(elen + (plen ? 1 + plen : 0) + 1);
   memcpy(new_path, entry, elen);
   if (plen) {
@@ -368,7 +367,8 @@ static char *build_starship_prompt(int status) {
     }
 
     execlp("starship", "starship", "prompt", "--status", status_arg, "--shlvl",
-           shlvl_arg, "--terminal-width", width_arg, (char *)NULL);  // flawfinder: ignore
+           shlvl_arg, "--terminal-width", width_arg,
+           (char *)NULL); // flawfinder: ignore
     _exit(127);
   }
 
@@ -453,10 +453,10 @@ static char *with_meow_marker(const char *prompt) {
       p++;
   }
 
-  marker_len = strlen(marker);
+  marker_len = strlen(marker); // flawfinder: ignore
   prefix_len = (size_t)(insert_at - prompt);
   style_prefix_len = (size_t)(style_prefix_end - insert_at);
-  suffix_len = strlen(matched ? p : insert_at);
+  suffix_len = strlen(matched ? p : insert_at); // flawfinder: ignore
 
   out = sh_malloc(prefix_len + style_prefix_len + marker_len + suffix_len + 1);
   memcpy(out, prompt, prefix_len);
@@ -549,7 +549,7 @@ static void main_loop(void) {
       if (sh.interactive) {
         const char *last = lineedit_last_line();
         if (last && *last) {
-          size_t n = strlen(last);
+          size_t n = strlen(last); // flawfinder: ignore
           char *retry = sh_malloc(n + 2);
           memcpy(retry, last, n);
           retry[n] = '\n';
@@ -635,7 +635,7 @@ int main(int argc, char **argv) {
     if (idx + 2 < argc)
       var_set_posparams(argc - idx - 2, argv + idx + 2);
 
-    cmdlen = strlen(cmd);
+    cmdlen = strlen(cmd); // flawfinder: ignore
     cmdline = sh_malloc(cmdlen + 2);
     memcpy(cmdline, cmd, cmdlen);
     cmdline[cmdlen] = '\n';

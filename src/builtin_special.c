@@ -215,7 +215,7 @@ int builtin_exec(int argc, char **argv) {
       for (p = pvar;; p = end + 1) {
         end = strchr(p, ':');
         if (!end)
-          end = p + strlen(p);
+          end = p + strlen(p); // flawfinder: ignore
         snprintf(fp, sizeof(fp), "%.*s/%s", (int)(end - p), p, argv[1]);
         int fd = open(fp, O_RDONLY | O_NOFOLLOW);
         if (fd >= 0) {

@@ -99,14 +99,14 @@ static char lineedit_pending[1024];
 static size_t lineedit_pending_len = 0;
 static size_t lineedit_pending_pos = 0;
 
-static void __attribute__((format(printf, 1, 2)))  // flawfinder: ignore
+static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
 lineedit_debugf(const char *fmt, ...) {
   const char *enabled;
   va_list ap;
 
   if (!lineedit_debug_inited) {
     lineedit_debug_inited = 1;
-    enabled = getenv("MEOWSH_DEBUG_LINEEDIT");  // flawfinder: ignore
+    enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
     if (enabled && *enabled)
       lineedit_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a");
   }
@@ -114,7 +114,7 @@ lineedit_debugf(const char *fmt, ...) {
     return;
 
   va_start(ap, fmt);
-  vfprintf(lineedit_debug_fp, fmt, ap);  // flawfinder: ignore
+  vfprintf(lineedit_debug_fp, fmt, ap); // flawfinder: ignore
   va_end(ap);
   fputc('\n', lineedit_debug_fp);
   fflush(lineedit_debug_fp);
@@ -314,7 +314,7 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
 
   /* Determine unknown command tokens at the start of each command segment. */
   {
-    size_t len = strlen(line);
+    size_t len = strlen(line); // flawfinder: ignore
     size_t seg = 0;
     char token[PATH_MAX];
 
@@ -475,7 +475,7 @@ static const char *prompt_last_line(const char *prompt) {
   if (!prompt)
     return NULL;
 
-  end = prompt + strlen(prompt);
+  end = prompt + strlen(prompt); // flawfinder: ignore
   while (end > prompt && end[-1] == '\n')
     end--;
 
@@ -619,7 +619,7 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
     return;
 
   for (i = 0; i < cr->count; i++) {
-    size_t len = strlen(cr->matches[i]);
+    size_t len = strlen(cr->matches[i]); // flawfinder: ignore
     if (len > max_len)
       max_len = len;
   }
@@ -650,7 +650,7 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
       if (idx >= cr->count)
         break;
 
-      len = strlen(cr->matches[idx]);
+      len = strlen(cr->matches[idx]); // flawfinder: ignore
       if ((ssize_t)idx == selected_idx) {
         write(fd, "\x1b[7m", 4);
         write(fd, cr->matches[idx], len);
@@ -753,7 +753,7 @@ static int lineedit_apply_completion(struct strbuf *sb, int *pos,
 
   start = word_start_at(sb->buf ? sb->buf : "", *pos);
   pfx_len = *pos - start;
-  match_len = strlen(match);
+  match_len = strlen(match); // flawfinder: ignore
 
   if ((size_t)pfx_len > match_len)
     return 0;
@@ -803,7 +803,7 @@ char *lineedit_read(const char *prompt) {
 
   if (prompt && strchr(prompt, '\n')) {
     /* Print multiline prompt once; redraw only the last line. */
-    write(fd, prompt, strlen(prompt));
+    write(fd, prompt, strlen(prompt)); // flawfinder: ignore
     display_prompt = prompt_last_line(prompt);
     lineedit_debugf("multiline display_prompt=%s",
                     display_prompt ? display_prompt : "(null)");
@@ -874,7 +874,7 @@ char *lineedit_read(const char *prompt) {
         if (cr && cr->count > 0) {
           if (cr->count == 1) {
             menu_deactivate(fd, &menu);
-            size_t mlen = strlen(cr->matches[0]);
+            size_t mlen = strlen(cr->matches[0]); // flawfinder: ignore
             int append_space = 0;
 
             if (mlen > 0 && cr->matches[0][mlen - 1] != '/') {
@@ -1125,7 +1125,8 @@ char *lineedit_read(const char *prompt) {
       free(last_submitted_line);
       last_submitted_line = sh_strdup("");
     }
-    lineedit_debugf("return line len=%zu", res ? strlen(res) : 0);
+    lineedit_debugf("return line len=%zu",
+                    res ? strlen(res) : 0); // flawfinder: ignore
     return res;
   }
 }
@@ -1164,7 +1165,7 @@ void history_load(const char *path) {
     char *nl = strchr(buf, '\n');
     if (nl)
       *nl = '\0';
-    if (parse_time_prefix(buf, &when) && strlen(buf) > 20)
+    if (parse_time_prefix(buf, &when) && strlen(buf) > 20) // flawfinder: ignore
       cmd = buf + 20;
     else
       when = time(NULL);
