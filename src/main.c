@@ -514,7 +514,7 @@ static void main_loop(void) {
 
       if (is_crt) {
         shorten_path(short_pwd, pwd, sizeof(short_pwd));
-        snprintf(ps1_buf, sizeof(ps1_buf), "\x1b[32m[SYSTEM READY] %s @ %s >\x1b[0m ",
+        snprintf(ps1_buf, sizeof(ps1_buf), "\x1b[32m[SYSTEM READY] %s @ %s\n>\x1b[0m ",
                  user, short_pwd);
         sh.ps1 = ps1_buf;
         ps2 = "> ";
