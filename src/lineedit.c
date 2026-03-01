@@ -284,15 +284,19 @@ static const char *prompt_last_line(const char *prompt) {
 }
 
 static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
-                         int show_suggestion) {
+                         int show_suggestion, int clear_below) {
   struct strbuf out = STRBUF_INIT;
   const char *line = sb->buf ? sb->buf : "";
   const char *crt = var_get("MEOWSH_CRT");
   int is_crt = crt && strcmp(crt, "1") == 0;
   const char *last_prompt = prompt_last_line(prompt);
 
-  /* CR then clear the current line and everything below it. */
-  strbuf_addstr(&out, "\x1b[?25l\r\x1b[J");
+  /* CR then clear current line and potentially below. */
+  strbuf_addstr(&out, "\x1b[?25l\r");
+  if (clear_below)
+    strbuf_addstr(&out, "\x1b[J");
+  else
+    strbuf_addstr(&out, "\x1b[K");
 
   if (last_prompt)
     strbuf_addstr(&out, last_prompt);
@@ -408,15 +412,12 @@ static void menu_remove_from_screen(int fd, int rows) {
   if (rows <= 0)
     return;
 
-  /* Layout while menu is active:
-   *   prompt line (cursor here)
-   *   menu rows...
-   * Clear everything below the prompt line.
+  /* Move to column 1, then down to first menu line, clear all below. 
+   * Cursor is assumed to be on the prompt line.
    */
-  write(fd, "\x1b[s", 3);    /* Save cursor */
-  write(fd, "\x1b[J", 3);    /* Clear from cursor down */
-  write(fd, "\n\x1b[J", 3); /* Ensure next lines are also cleared */
-  write(fd, "\x1b[u", 3);    /* Restore cursor */
+  write(fd, "\r\n\x1b[J", 4);
+  /* Move back up to prompt line */
+  write(fd, "\x1b[1A", 4);
 }
 
 static void menu_deactivate(int fd, struct menu_state *menu) {
@@ -544,6 +545,7 @@ static void menu_apply_and_render(int fd, struct menu_state *menu,
                                   const char *display_prompt,
                                   int show_suggestion) {
   struct completion_result tmp = {0};
+  int i;
 
   if (!menu->active || menu->count == 0)
     return;
@@ -555,17 +557,23 @@ static void menu_apply_and_render(int fd, struct menu_state *menu,
     lineedit_apply_completion(sb, pos, menu->matches[menu->selected], 0);
   }
 
-  /* 1. Refresh prompt line (clears everything below) */
-  refresh_line(fd, display_prompt, sb, *pos, show_suggestion);
+  /* 1. Redraw prompt line. This clears any old menu below. */
+  refresh_line(fd, display_prompt, sb, *pos, show_suggestion, 1);
 
-  /* 2. Print menu below the prompt */
-  write(fd, "\x1b[s\n", 4); /* Save cursor and move to next line */
+  /* 2. Move to next line and print menu */
+  write(fd, "\n", 1);
   tmp.matches = menu->matches;
   tmp.types = menu->types;
   tmp.count = menu->count;
   lineedit_print_matches_columns(fd, &tmp, (ssize_t)menu->selected, &menu->rows,
                                  &menu->cols);
-  write(fd, "\x1b[u", 3); /* Restore cursor to prompt line */
+
+  /* 3. Move cursor back up to the prompt line */
+  for (i = 0; i < menu->rows + 1; i++)
+    write(fd, "\x1b[1A", 4);
+
+  /* 4. Restore horizontal position on prompt line without clearing the menu */
+  refresh_line(fd, display_prompt, sb, *pos, show_suggestion, 0);
 }
 
 static size_t menu_move_vertical(const struct menu_state *menu, int dir) {
@@ -666,7 +674,7 @@ char *lineedit_read(const char *prompt) {
   enable_raw_mode(fd_in);
   {
     int suppress_suggestion = 0;
-    refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+    refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
 
     for (;;) {
       char c;
@@ -690,14 +698,14 @@ char *lineedit_read(const char *prompt) {
         pos = 0;
         lineedit_debugf("ctrl-c in-place clear");
         suppress_suggestion = 1;
-        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
         continue;
       } else if (c == 1) { /* Ctrl-A (Home) */
         pos = 0;
-        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
       } else if (c == 5) { /* Ctrl-E (End) */
         pos = (int)sb.len;
-        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
       } else if (c == '\t') { /* Tab completion */
         if (menu.active && menu.count > 1) {
           menu.selected = (menu.selected + 1) % menu.count;
@@ -713,7 +721,7 @@ char *lineedit_read(const char *prompt) {
           strbuf_addch(&sb, '\t');
           pos = (int)sb.len;
           suppress_suggestion = 1;
-          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
           continue;
         }
 
@@ -740,7 +748,7 @@ char *lineedit_read(const char *prompt) {
                                           append_space)) {
               suppress_suggestion = 0;
               refresh_line(fd_out, display_prompt, &sb, pos,
-                           !suppress_suggestion);
+                           !suppress_suggestion, 1);
             }
           } else if (cr->common_len > (size_t)pfx_len) {
             menu_deactivate(fd_out, &menu);
@@ -756,7 +764,7 @@ char *lineedit_read(const char *prompt) {
             pos += (int)to_add;
             suppress_suggestion = 0;
             refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+                         !suppress_suggestion, 1);
           } else {
             /* Multiple matches, no common prefix to add -> show menu immediately */
             menu_state_start(&menu, cr, &sb, pos);
@@ -780,7 +788,7 @@ char *lineedit_read(const char *prompt) {
           sb.len--;
           sb.buf[sb.len] = '\0';
           suppress_suggestion = 1;
-          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
         }
       } else if (c == 4) { /* Ctrl-D */
         menu_deactivate(fd_out, &menu);
@@ -796,7 +804,7 @@ char *lineedit_read(const char *prompt) {
           sb.len--;
           sb.buf[sb.len] = '\0';
           suppress_suggestion = 1;
-          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
         }
       } else if (c == 21) { /* Ctrl-U (clear line) */
         menu_deactivate(fd_out, &menu);
@@ -806,7 +814,7 @@ char *lineedit_read(const char *prompt) {
         if (sb.buf)
           sb.buf[0] = '\0';
         suppress_suggestion = 1;
-        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
       } else if (c == 27) { /* Escape sequence */
         int key;
         if (!lineedit_read_escape_key(fd_in, &key))
@@ -866,7 +874,7 @@ char *lineedit_read(const char *prompt) {
             pos = (int)sb.len;
             suppress_suggestion = 0;
             refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+                         !suppress_suggestion, 1);
           }
         } else if (key == LE_KEY_DOWN) { /* Down arrow */
           if (history_idx < history_count) {
@@ -884,19 +892,19 @@ char *lineedit_read(const char *prompt) {
             pos = (int)sb.len;
             suppress_suggestion = 0;
             refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+                         !suppress_suggestion, 1);
           }
         } else if (key == LE_KEY_LEFT) { /* Left arrow */
           if (pos > 0) {
             pos--;
             refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+                         !suppress_suggestion, 1);
           }
         } else if (key == LE_KEY_RIGHT) { /* Right arrow */
           if (pos < (int)sb.len) {
             pos++;
             refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+                         !suppress_suggestion, 1);
           } else {
             /* Accept suggestion if any */
             const char *match = NULL;
@@ -909,15 +917,15 @@ char *lineedit_read(const char *prompt) {
               pos = (int)sb.len;
               suppress_suggestion = 0;
               refresh_line(fd_out, display_prompt, &sb, pos,
-                           !suppress_suggestion);
+                           !suppress_suggestion, 1);
             }
           }
         } else if (key == LE_KEY_HOME) { /* Home */
           pos = 0;
-          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
         } else if (key == LE_KEY_END) { /* End */
           pos = (int)sb.len;
-          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+          refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
         } else if (key == LE_KEY_DELETE) { /* Delete */
           if (pos < (int)sb.len) {
             memmove(sb.buf + pos, sb.buf + pos + 1, sb.len - pos - 1);
@@ -925,7 +933,7 @@ char *lineedit_read(const char *prompt) {
             sb.buf[sb.len] = '\0';
             suppress_suggestion = 1;
             refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+                         !suppress_suggestion, 1);
           }
         } else if (key == LE_KEY_SHIFT_TAB) { /* Shift-Tab */
           write(fd_out, "\a", 1);
@@ -942,7 +950,7 @@ char *lineedit_read(const char *prompt) {
         sb.buf[sb.len] = '\0';
         pos++;
         suppress_suggestion = 0;
-        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+        refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion, 1);
       }
     }
   }
