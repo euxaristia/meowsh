@@ -395,7 +395,7 @@ static void menu_state_reset(struct menu_state *ms) {
   free(ms->types);
   ms->types = NULL;
   ms->count = 0;
-  ms->selected = 0;
+  ms->selected = (size_t)-1;
   free(ms->base_line);
   ms->base_line = NULL;
   ms->base_pos = 0;
@@ -404,39 +404,23 @@ static void menu_state_reset(struct menu_state *ms) {
   ms->cols = 0;
 }
 
-static void menu_clear_block(int fd, int rows) {
-  int i;
-
-  if (rows <= 0)
-    return;
-
-  for (i = 0; i < rows; i++) {
-    /* Cursor starts on prompt line beneath the menu. Move up and clear each
-     * row. */
-    write(fd, "\x1b[1A\r\x1b[2K", 10);
-  }
-}
-
 static void menu_remove_from_screen(int fd, int rows) {
-  int i;
-
   if (rows <= 0)
     return;
 
   /* Layout while menu is active:
-   *   old prompt line
+   *   prompt line (cursor here)
    *   menu rows...
-   *   current prompt line (cursor here)
-   * Remove old prompt + menu rows so current prompt collapses upward.
+   * Clear everything below the prompt line.
    */
-  for (i = 0; i < rows + 1; i++)
-    write(fd, "\x1b[1A", 4);
-  for (i = 0; i < rows + 1; i++)
-    write(fd, "\r\x1b[M", 4);
+  write(fd, "\x1b[s", 3);    /* Save cursor */
+  write(fd, "\x1b[J", 3);    /* Clear from cursor down */
+  write(fd, "\n\x1b[J", 3); /* Ensure next lines are also cleared */
+  write(fd, "\x1b[u", 3);    /* Restore cursor */
 }
 
 static void menu_deactivate(int fd, struct menu_state *menu) {
-  if (menu->active && menu->rows > 0)
+  if (menu->active)
     menu_remove_from_screen(fd, menu->rows);
   menu_state_reset(menu);
 }
@@ -546,7 +530,7 @@ static void menu_state_start(struct menu_state *ms,
     ms->matches[i] = sh_strdup(cr->matches[i]);
     ms->types[i] = cr->types[i];
   }
-  ms->selected = 0;
+  ms->selected = (size_t)-1;
   ms->base_line = sh_strdup(sb->buf ? sb->buf : "");
   ms->base_pos = pos;
   ms->active = 1;
@@ -564,18 +548,24 @@ static void menu_apply_and_render(int fd, struct menu_state *menu,
   if (!menu->active || menu->count == 0)
     return;
 
-  strbuf_reset(sb);
-  strbuf_addstr(sb, menu->base_line);
-  *pos = menu->base_pos;
-  lineedit_apply_completion(sb, pos, menu->matches[menu->selected], 0);
+  if (menu->selected != (size_t)-1) {
+    strbuf_reset(sb);
+    strbuf_addstr(sb, menu->base_line);
+    *pos = menu->base_pos;
+    lineedit_apply_completion(sb, pos, menu->matches[menu->selected], 0);
+  }
 
-  menu_clear_block(fd, menu->rows);
+  /* 1. Refresh prompt line (clears everything below) */
+  refresh_line(fd, display_prompt, sb, *pos, show_suggestion);
+
+  /* 2. Print menu below the prompt */
+  write(fd, "\x1b[s\n", 4); /* Save cursor and move to next line */
   tmp.matches = menu->matches;
   tmp.types = menu->types;
   tmp.count = menu->count;
   lineedit_print_matches_columns(fd, &tmp, (ssize_t)menu->selected, &menu->rows,
                                  &menu->cols);
-  refresh_line(fd, display_prompt, sb, *pos, show_suggestion);
+  write(fd, "\x1b[u", 3); /* Restore cursor to prompt line */
 }
 
 static size_t menu_move_vertical(const struct menu_state *menu, int dir) {
@@ -584,6 +574,9 @@ static size_t menu_move_vertical(const struct menu_state *menu, int dir) {
   size_t cols = (size_t)(menu->cols > 0 ? menu->cols : 1);
   size_t col = idx % cols;
   size_t cand;
+
+  if (idx == (size_t)-1)
+    return 0;
 
   if (dir > 0) {
     cand = idx + cols;
@@ -767,18 +760,8 @@ char *lineedit_read(const char *prompt) {
           } else {
             /* Multiple matches, no common prefix to add -> show menu immediately */
             menu_state_start(&menu, cr, &sb, pos);
-            /* Enter menu mode and show highlighted matches. */
-            write(fd_out, "\n", 1);
-            {
-              struct completion_result tmp = {0};
-              tmp.matches = menu.matches;
-              tmp.types = menu.types;
-              tmp.count = menu.count;
-              lineedit_print_matches_columns(fd_out, &tmp, -1, &menu.rows,
-                                             &menu.cols);
-            }
-            refresh_line(fd_out, display_prompt, &sb, pos,
-                         !suppress_suggestion);
+            menu_apply_and_render(fd_out, &menu, &sb, &pos, display_prompt,
+                                  !suppress_suggestion);
           }
           tab_state_store(&last_tab_line, &last_tab_pos, &sb, pos);
         } else {
@@ -831,7 +814,8 @@ char *lineedit_read(const char *prompt) {
 
         if (menu.active && menu.count > 1) {
           if (key == LE_KEY_SHIFT_TAB) { /* Shift-Tab */
-            menu.selected = (menu.selected + menu.count - 1) % menu.count;
+            if (menu.selected == (size_t)-1) menu.selected = menu.count - 1;
+            else menu.selected = (menu.selected + menu.count - 1) % menu.count;
             suppress_suggestion = 0;
             menu_apply_and_render(fd_out, &menu, &sb, &pos, display_prompt,
                                   !suppress_suggestion);
@@ -852,14 +836,16 @@ char *lineedit_read(const char *prompt) {
             continue;
           }
           if (key == LE_KEY_RIGHT) { /* Right */
-            menu.selected = (menu.selected + 1) % menu.count;
+            if (menu.selected == (size_t)-1) menu.selected = 0;
+            else menu.selected = (menu.selected + 1) % menu.count;
             suppress_suggestion = 0;
             menu_apply_and_render(fd_out, &menu, &sb, &pos, display_prompt,
                                   !suppress_suggestion);
             continue;
           }
           if (key == LE_KEY_LEFT) { /* Left */
-            menu.selected = (menu.selected + menu.count - 1) % menu.count;
+            if (menu.selected == (size_t)-1) menu.selected = menu.count - 1;
+            else menu.selected = (menu.selected + menu.count - 1) % menu.count;
             suppress_suggestion = 0;
             menu_apply_and_render(fd_out, &menu, &sb, &pos, display_prompt,
                                   !suppress_suggestion);
