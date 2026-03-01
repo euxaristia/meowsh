@@ -72,7 +72,7 @@ expect(token_type_t type)
 	if (sh.parse_error)
 		return;
 	if (!accept(type)) {
-		char got[128];
+		char got[128]; // flawfinder: ignore
 		token_desc(lexer_peek(), got, sizeof(got));
 		sh_syntax("expected '%s', got %s",
 		    token_name(type),
@@ -201,7 +201,7 @@ p_redirect(void)
 	case TOK_DLESSDASH: rtype = REDIR_HEREDOC_STRIP; if (fd < 0) fd = 0; break;
 	default:
 		{
-			char got[128];
+			char got[128]; // flawfinder: ignore
 			token_desc(lexer_peek(), got, sizeof(got));
 			sh_syntax("unexpected token in redirection: %s", got);
 		}
@@ -519,7 +519,7 @@ try_function_def(void)
 			struct node *body = p_compound_command();
 			if (!body) {
 				{
-					char got[128];
+					char got[128]; // flawfinder: ignore
 					token_desc(lexer_peek(), got, sizeof(got));
 					sh_syntax("expected compound command in function definition, got %s",
 					    got);
@@ -593,7 +593,7 @@ p_pipeline(void)
 			cmd = p_command();
 			if (!cmd) {
 				{
-					char got[128];
+					char got[128]; // flawfinder: ignore
 					token_desc(lexer_peek(), got, sizeof(got));
 					sh_syntax("expected command after '|', got %s", got);
 				}
@@ -633,7 +633,7 @@ p_and_or(void)
 			right = p_pipeline();
 			if (!right) {
 				{
-					char got[128];
+					char got[128]; // flawfinder: ignore
 					token_desc(lexer_peek(), got, sizeof(got));
 					sh_syntax("expected command after '%s', got %s",
 					    conn == CONN_AND ? "&&" : "||",

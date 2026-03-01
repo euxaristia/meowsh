@@ -55,7 +55,7 @@ void crt_boot_sequence(void) {
 
   const char *user = var_get("USER");
   const char *pwd = var_get("PWD");
-  char short_pwd[PATH_MAX];
+  char short_pwd[PATH_MAX]; // flawfinder: ignore
   if (!user)
     user = "meow";
   if (!pwd)

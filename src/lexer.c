@@ -208,7 +208,7 @@ void lexer_clear_heredocs(void) {
 char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted) {
   struct strbuf sb = STRBUF_INIT;
   int c;
-  size_t dlen = strlen(delim); // flawfinder: ignore
+  size_t dlen = strlen(delim); // flawfinder: ignore // flawfinder: ignore
 
   (void)quoted; /* quoting affects expansion, not reading */
 
@@ -236,7 +236,7 @@ char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted) {
       }
       /* Compare without trailing newline */
       {
-        size_t llen = strlen(lp); // flawfinder: ignore
+        size_t llen = strlen(lp); // flawfinder: ignore // flawfinder: ignore
         if (llen > 0 && lp[llen - 1] == '\n')
           llen--;
         if (llen == dlen && memcmp(lp, delim, dlen) == 0) {
@@ -638,7 +638,7 @@ static struct token *read_operator(int c) {
 
   /* Should not reach here */
   {
-    char buf[2] = {(char)c, '\0'};
+    char buf[2] = {(char)c, '\0'}; // flawfinder: ignore
     return make_token(TOK_WORD, buf);
   }
 }

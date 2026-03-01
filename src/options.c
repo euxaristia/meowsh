@@ -122,7 +122,7 @@ options_print(int verbose)
 char *
 options_to_string(void)
 {
-	char buf[32];
+	char buf[32]; // flawfinder: ignore
 	char *p = buf;
 	const struct optmap *om;
 

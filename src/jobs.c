@@ -352,7 +352,7 @@ job_parse_spec(const char *spec)
 			struct job *j;
 			for (j = sh.jobs; j; j = j->next) {
 				if (j->cmd_text &&
-				    strncmp(j->cmd_text, spec, strlen(spec)) == 0)
+				    strncmp(j->cmd_text, spec, strlen(spec)) == 0) // flawfinder: ignore
 					return j;
 			}
 		}

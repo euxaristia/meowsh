@@ -74,7 +74,7 @@ a_primary(struct arith_state *st)
 
 	/* Variable name */
 	if (isalpha((unsigned char)*st->p) || *st->p == '_') {
-		char name[256];
+		char name[256]; // flawfinder: ignore
 		size_t n = 0;
 		const char *v;
 

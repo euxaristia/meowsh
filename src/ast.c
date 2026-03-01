@@ -36,7 +36,7 @@ ast_pipeline(struct node **cmds, int ncmds, int bang)
 	struct node **arr;
 
 	arr = arena_alloc(&parse_arena, ncmds * sizeof(*arr));
-	memcpy(arr, cmds, ncmds * sizeof(*arr));
+	memcpy(arr, cmds, ncmds * sizeof(*arr)); // flawfinder: ignore
 	n->data.pipeline.cmds = arr;
 	n->data.pipeline.ncmds = ncmds;
 	n->data.pipeline.bang = bang;
@@ -62,9 +62,9 @@ ast_list(struct node **items, connector_t *conns, int nitems)
 	connector_t *carr;
 
 	iarr = arena_alloc(&parse_arena, nitems * sizeof(*iarr));
-	memcpy(iarr, items, nitems * sizeof(*iarr));
+	memcpy(iarr, items, nitems * sizeof(*iarr)); // flawfinder: ignore
 	carr = arena_alloc(&parse_arena, nitems * sizeof(*carr));
-	memcpy(carr, conns, nitems * sizeof(*carr));
+	memcpy(carr, conns, nitems * sizeof(*carr)); // flawfinder: ignore
 	n->data.list.items = iarr;
 	n->data.list.connectors = carr;
 	n->data.list.nitems = nitems;

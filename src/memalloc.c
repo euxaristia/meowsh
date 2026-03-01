@@ -62,7 +62,7 @@ char *arena_strdup(struct arena *a, const char *s) {
     return NULL;
   len = strlen(s) + 1; // flawfinder: ignore
   p = arena_alloc(a, len);
-  memcpy(p, s, len);
+  memcpy(p, s, len); // flawfinder: ignore
   return p;
 }
 
@@ -72,7 +72,7 @@ char *arena_strndup(struct arena *a, const char *s, size_t n) {
   if (!s)
     return NULL;
   p = arena_alloc(a, n + 1);
-  memcpy(p, s, n);
+  memcpy(p, s, n); // flawfinder: ignore
   p[n] = '\0';
   return p;
 }

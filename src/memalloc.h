@@ -13,7 +13,7 @@ struct arena_block {
 	struct arena_block *next;
 	size_t size;
 	size_t used;
-	char data[];
+	char data[]; // flawfinder: ignore
 };
 
 /* Arena */

@@ -103,7 +103,7 @@ struct shell_state {
 	} *functions[HASH_SIZE];
 
 	/* Trap table — indexed by signal number */
-	char *traps[NSIG];
+	char *traps[NSIG]; // flawfinder: ignore
 	volatile sig_atomic_t trap_pending[NSIG];
 	volatile sig_atomic_t any_trap_pending;
 

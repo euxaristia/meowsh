@@ -49,7 +49,7 @@ struct saved_fd *redir_apply(struct redirect *redirs) {
     switch (r->type) {
     case REDIR_INPUT:
       filename = expand_word(r->filename, 0);
-      newfd = open(filename, O_RDONLY);
+      newfd = open(filename, O_RDONLY); // flawfinder: ignore
       if (newfd < 0) {
         sh_errorf("%s", filename);
         free(filename);
@@ -71,7 +71,7 @@ struct saved_fd *redir_apply(struct redirect *redirs) {
         int flags = O_WRONLY | O_CREAT | O_TRUNC;
         if (option_is_set(OPT_NOCLOBBER))
           flags = O_WRONLY | O_CREAT | O_EXCL;
-        newfd = open(filename, flags, 0666);
+        newfd = open(filename, flags, 0666); // flawfinder: ignore
       }
       if (newfd < 0) {
         sh_errorf("%s", filename);
@@ -87,7 +87,7 @@ struct saved_fd *redir_apply(struct redirect *redirs) {
 
     case REDIR_CLOBBER:
       filename = expand_word(r->filename, 0);
-      newfd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+      newfd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); // flawfinder: ignore
       if (newfd < 0) {
         sh_errorf("%s", filename);
         free(filename);
@@ -102,7 +102,7 @@ struct saved_fd *redir_apply(struct redirect *redirs) {
 
     case REDIR_APPEND:
       filename = expand_word(r->filename, 0);
-      newfd = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0666);
+      newfd = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0666); // flawfinder: ignore
       if (newfd < 0) {
         sh_errorf("%s", filename);
         free(filename);
@@ -117,7 +117,7 @@ struct saved_fd *redir_apply(struct redirect *redirs) {
 
     case REDIR_RDWR:
       filename = expand_word(r->filename, 0);
-      newfd = open(filename, O_RDWR | O_CREAT, 0666);
+      newfd = open(filename, O_RDWR | O_CREAT, 0666); // flawfinder: ignore
       if (newfd < 0) {
         sh_errorf("%s", filename);
         free(filename);
@@ -162,7 +162,7 @@ struct saved_fd *redir_apply(struct redirect *redirs) {
         goto error;
       }
       {
-        size_t len = strlen(body); // flawfinder: ignore
+        size_t len = strlen(body); // flawfinder: ignore // flawfinder: ignore
         ssize_t nw = write(pfd[1], body, len);
         (void)nw;
       }

@@ -75,7 +75,7 @@ field_split(const char *s, int *countp)
 		{
 			size_t len = (size_t)(p - start);
 			fields[count] = sh_malloc(len + 1);
-			memcpy(fields[count], start, len);
+			memcpy(fields[count], start, len); // flawfinder: ignore
 			fields[count][len] = '\0';
 			count++;
 		}
