@@ -201,6 +201,9 @@ func (le *LineEditor) promptWidth() int {
 }
 
 func (le *LineEditor) readLineCooked() (string, error) {
+	if le.prompt != "" {
+		fmt.Print(le.prompt)
+	}
 	line, err := le.reader.ReadString('\n')
 	return strings.TrimRight(line, "\r\n"), err
 }
