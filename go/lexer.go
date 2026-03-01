@@ -31,7 +31,9 @@ func (l *Lexer) backup() {
 
 func (l *Lexer) PeekRune() rune {
 	r := l.NextRune()
-	l.backup()
+	if r != -1 {
+		l.backup()
+	}
 	return r
 }
 
@@ -52,7 +54,9 @@ func (l *Lexer) skipBlanks() {
 		if r == ' ' || r == '\t' {
 			continue
 		}
-		l.backup()
+		if r != -1 {
+			l.backup()
+		}
 		break
 	}
 }
@@ -71,6 +75,7 @@ func (l *Lexer) Tokenize() []Token {
 }
 
 func (l *Lexer) readToken() Token {
+	l.skipBlanks()
 	r := l.NextRune()
 	if r == -1 {
 		return Token{Type: TOK_EOF}
@@ -81,7 +86,9 @@ func (l *Lexer) readToken() Token {
 		if nr == '\n' {
 			return l.readToken()
 		}
-		l.backup()
+		if nr != -1 {
+			l.backup()
+		}
 	}
 
 	if r == '#' {
@@ -148,7 +155,9 @@ func (l *Lexer) readOperator(r rune) Token {
 		if nr == '>' {
 			return Token{Type: TOK_LESSGREAT, Value: "<>"}
 		}
-		l.backup()
+		if nr != -1 {
+			l.backup()
+		}
 		return Token{Type: TOK_LESS, Value: "<"}
 	case '>':
 		nr := l.NextRune()
@@ -161,7 +170,9 @@ func (l *Lexer) readOperator(r rune) Token {
 		if nr == '|' {
 			return Token{Type: TOK_CLOBBER, Value: ">|"}
 		}
-		l.backup()
+		if nr != -1 {
+			l.backup()
+		}
 		return Token{Type: TOK_GREAT, Value: ">"}
 	case '(':
 		return Token{Type: TOK_LPAREN, Value: "("}

@@ -11,13 +11,13 @@ import (
 var sh Shell
 
 func mainLoop() {
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		if sh.Interactive {
 			prompt := buildPrompt()
 			fmt.Print(prompt)
 		}
 
-		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
