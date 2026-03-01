@@ -33,13 +33,13 @@ run_tty_case() {
   shift 2
   (
     cd "$ROOT"
-    printf "%b" "$input" | "$@" script -q -e -c "strace -f -o /tmp/meowsh_strace.log ./meowsh" "$log" >/dev/null
+    printf "%b" "$input" | "$@" script -q -e -c "./meowsh" "$log" >/dev/null
   )
 }
 
 echo "1) leading-space commands execute and shell exits"
 log1="$tmpdir/case1.log"
-run_tty_case "  echo HI_FROM_INTERACTIVE\nexit\n" "$log1" env -i MEOWSH_STARSHIP=0 PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}"
+run_tty_case "  echo HI_FROM_INTERACTIVE\nexit\n" "$log1" env -i MEOWSH_STARSHIP=0 PATH="/usr/local/bin:/usr/bin:/bin" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}"
 strip_ansi <"$log1" >"$tmpdir/case1.stripped"
 grep -F "HI_FROM_INTERACTIVE" "$tmpdir/case1.stripped" >/dev/null
 
@@ -49,7 +49,7 @@ cat >"$rc" <<'EOF'
 echo RC_LOADED_DEFAULT
 EOF
 log2="$tmpdir/case2.log"
-run_tty_case "exit\n" "$log2" env -i MEOWSH_STARSHIP=0 PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc"
+run_tty_case "exit\n" "$log2" env -i MEOWSH_STARSHIP=0 PATH="/usr/local/bin:/usr/bin:/bin" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc"
 strip_ansi <"$log2" >"$tmpdir/case2.stripped"
 grep -F "RC_LOADED_DEFAULT" "$tmpdir/case2.stripped" >/dev/null
 
@@ -59,7 +59,7 @@ cat >"$rc_empty_ps1" <<'EOF'
 PS1=''
 EOF
 log3="$tmpdir/case3.log"
-run_tty_case "exit\n" "$log3" env -i MEOWSH_STARSHIP=0 PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc_empty_ps1"
+run_tty_case "exit\n" "$log3" env -i MEOWSH_STARSHIP=0 PATH="/usr/local/bin:/usr/bin:/bin" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc_empty_ps1"
 strip_ansi <"$log3" >"$tmpdir/case3.stripped"
 grep -F "𓃠 " "$tmpdir/case3.stripped" >/dev/null
 
