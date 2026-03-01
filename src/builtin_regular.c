@@ -72,14 +72,13 @@ int builtin_cd(int argc, char **argv) {
   const char *dir = NULL;
   const char *oldpwd;
   char resolved[PATH_MAX]; // flawfinder: ignore
-  int physical = 0;
   int i;
 
   for (i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-L") == 0)
-      physical = 0;
+      ; /* physical = 0 */
     else if (strcmp(argv[i], "-P") == 0)
-      physical = 1;
+      ; /* physical = 1 */
     else if (strcmp(argv[i], "-") == 0) {
       dir = var_get("OLDPWD");
       if (!dir) {
