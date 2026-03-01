@@ -266,6 +266,16 @@ func builtinSource(args []string) int {
 	return 0
 }
 
+func GetBuiltins() []string {
+	return []string{
+		"alias", "bg", "cd", "continue", "echo", "eval", "exit", "export",
+		"false", "fg", "jobs", "kill", "local", "read", "readonly", "return",
+		"set", "shift", "source", "trap", "true", "type", "ulimit", "umask",
+		"unalias", "unset", "wait", "if", "then", "else", "elif", "fi",
+		"while", "until", "for", "do", "done", "case", "esac", "in",
+	}
+}
+
 func builtinType(args []string) int {
 	if len(args) == 0 {
 		return 1

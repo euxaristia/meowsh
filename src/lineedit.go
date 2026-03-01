@@ -412,6 +412,23 @@ func (le *LineEditor) readLineCooked() (string, error) {
 	return strings.TrimRight(line, "\r\n"), err
 }
 
+func (le *LineEditor) isCommandPosition() bool {
+	i := le.pos - 1
+	// Skip current word
+	for i >= 0 && le.line[i] != ' ' && le.line[i] != '\t' && le.line[i] != ';' && le.line[i] != '|' && le.line[i] != '&' && le.line[i] != '(' && le.line[i] != '{' {
+		i--
+	}
+	// Skip whitespace
+	for i >= 0 && (le.line[i] == ' ' || le.line[i] == '\t') {
+		i--
+	}
+	if i < 0 {
+		return true
+	}
+	sep := le.line[i]
+	return sep == ';' || sep == '|' || sep == '&' || sep == '(' || sep == '{' || sep == '\n'
+}
+
 func (le *LineEditor) handleTab(back bool) {
 	if len(le.lastMatches) > 0 {
 		dCol := 1
@@ -424,24 +441,72 @@ func (le *LineEditor) handleTab(back bool) {
 	}
 
 	start := le.pos
-	for start > 0 && le.line[start-1] != ' ' {
+	for start > 0 && le.line[start-1] != ' ' && le.line[start-1] != '\t' && le.line[start-1] != ';' && le.line[start-1] != '|' && le.line[start-1] != '&' && le.line[start-1] != '(' && le.line[start-1] != '{' {
 		start--
 	}
 	word := string(le.line[start:le.pos])
 
+	matches := []string{}
 	dir := "."
 	prefix := word
-	if i := strings.LastIndex(word, "/"); i != -1 {
-		dir = word[:i+1]
-		prefix = word[i+1:]
-	}
+	isCommand := le.isCommandPosition() && !strings.Contains(word, "/")
 
-	matches := []string{}
-	files, err := os.ReadDir(dir)
-	if err == nil {
-		for _, f := range files {
-			if strings.HasPrefix(f.Name(), prefix) {
-				matches = append(matches, f.Name())
+	if isCommand {
+		// Built-ins
+		for _, b := range GetBuiltins() {
+			if strings.HasPrefix(b, word) {
+				matches = append(matches, b)
+			}
+		}
+		// Aliases
+		for a := range sh.Aliases {
+			if strings.HasPrefix(a, word) {
+				matches = append(matches, a)
+			}
+		}
+		// Functions
+		for f := range sh.Functions {
+			if strings.HasPrefix(f, word) {
+				matches = append(matches, f)
+			}
+		}
+		// PATH
+		pathDirs := strings.Split(varGet("PATH"), ":")
+		for _, d := range pathDirs {
+			if d == "" {
+				continue
+			}
+			files, err := os.ReadDir(d)
+			if err == nil {
+				for _, f := range files {
+					if strings.HasPrefix(f.Name(), word) {
+						// Only add if not already present
+						found := false
+						for _, m := range matches {
+							if m == f.Name() {
+								found = true
+								break
+							}
+						}
+						if !found {
+							matches = append(matches, f.Name())
+						}
+					}
+				}
+			}
+		}
+	} else {
+		if i := strings.LastIndex(word, "/"); i != -1 {
+			dir = word[:i+1]
+			prefix = word[i+1:]
+		}
+
+		files, err := os.ReadDir(dir)
+		if err == nil {
+			for _, f := range files {
+				if strings.HasPrefix(f.Name(), prefix) {
+					matches = append(matches, f.Name())
+				}
 			}
 		}
 	}
