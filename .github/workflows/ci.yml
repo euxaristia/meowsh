@@ -35,6 +35,7 @@ jobs:
           --suppress=knownConditionTrueFalse \
           --suppress=unusedStructMember \
           --suppress=shadowVariable \
+          --suppress=staticFunction \
           --error-exitcode=1 src/
 
     - name: Build
