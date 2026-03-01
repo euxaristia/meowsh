@@ -333,152 +333,30 @@ static const char *prompt_last_line(const char *prompt) {
 
 static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
                          int show_suggestion) {
-  struct strbuf colored = STRBUF_INIT;
   struct strbuf out = STRBUF_INIT;
   const char *line = sb->buf ? sb->buf : "";
-  const char *p = line;
-  int in_quote = 0;
-  char quote_char = 0;
   const char *crt = var_get("MEOWSH_CRT");
   int is_crt = crt && strcmp(crt, "1") == 0;
   const char *last_prompt = prompt_last_line(prompt);
   size_t prompt_w = visual_width(last_prompt);
 
-  /* Determine unknown command tokens at the start of each command segment. */
-  size_t unknown_start[64];
-  size_t unknown_len[64];
-  size_t unknown_count = 0;
-  size_t unknown_idx = 0;
-  {
-    size_t len = strlen(line); // flawfinder: ignore
-    size_t seg = 0;
-    char token[PATH_MAX];
-    while (seg < len) {
-      size_t j = seg;
-      int found_cmd = 0;
-      while (j < len && (line[j] == ' ' || line[j] == '\t'))
-        j++;
-      if (j >= len)
-        break;
-      for (;;) {
-        size_t ts, te, tl;
-        while (j < len && (line[j] == ' ' || line[j] == '\t'))
-          j++;
-        if (j >= len)
-          break;
-        if (line[j] == ';' || line[j] == '|' || line[j] == '&')
-          break;
-        ts = j;
-        while (j < len && line[j] != ' ' && line[j] != '\t' && line[j] != ';' &&
-               line[j] != '|' && line[j] != '&' && line[j] != '<' &&
-               line[j] != '>') {
-          j++;
-        }
-        te = j;
-        tl = te - ts;
-        if (tl == 0)
-          continue;
-        if (tl < sizeof(token)) {
-          memcpy(token, line + ts, tl);
-          token[tl] = '\0';
-          if (!(strchr(token, '=') && !strchr(token, '/'))) {
-            if (!command_exists_for_highlight(token) &&
-                unknown_count <
-                    (sizeof(unknown_start) / sizeof(unknown_start[0]))) {
-              unknown_start[unknown_count] = ts;
-              unknown_len[unknown_count] = tl;
-              unknown_count++;
-            }
-          }
-        }
-        found_cmd = 1;
-        break;
-      }
-      while (j < len && line[j] != ';' && line[j] != '|' && line[j] != '&')
-        j++;
-      if (j < len) {
-        if ((line[j] == '&' || line[j] == '|') && j + 1 < len &&
-            line[j + 1] == line[j]) {
-          j += 2;
-        } else {
-          j++;
-        }
-      }
-      seg = j;
-      if (!found_cmd && seg >= len)
-        break;
-    }
-  }
+  /* CR then clear the current line and everything below it.
+   * This is more aggressive but solves the duplication if we wrap. */
+  strbuf_addstr(&out, "\x1b[?25l\r\x1b[J");
 
-  /* Syntax highlighting logic */
-  if (is_crt)
-    strbuf_addstr(&colored, "\x1b[32m");
-
-  while (*p) {
-    size_t i = (size_t)(p - line);
-    if (!in_quote && unknown_idx < unknown_count &&
-        i == unknown_start[unknown_idx]) {
-      size_t seglen = unknown_len[unknown_idx];
-      size_t k;
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[31m"); /* Red for unknown */
-      for (k = 0; k < seglen && p[k]; k++)
-        strbuf_addch(&colored, p[k]);
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[0m");
-      p += seglen;
-      unknown_idx++;
-    } else if (!in_quote && (*p == '\'' || *p == '"')) {
-      in_quote = 1;
-      quote_char = *p;
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[33m"); /* Yellow */
-      strbuf_addch(&colored, *p++);
-    } else if (in_quote && *p == quote_char) {
-      strbuf_addch(&colored, *p++);
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[0m");
-      in_quote = 0;
-    } else if (!in_quote && *p == '#') {
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[32m"); /* Green */
-      while (*p)
-        strbuf_addch(&colored, *p++);
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[0m");
-    } else {
-      strbuf_addch(&colored, *p++);
-    }
-  }
-  if (in_quote && !is_crt)
-    strbuf_addstr(&colored, "\x1b[0m");
-
-  if (is_crt)
-    strbuf_addstr(&colored, "\x1b[0m");
-
-  /* Ghost suggestion */
-  if (show_suggestion && pos == (int)sb->len && sb->len > 0) {
-    const char *match = lineedit_find_history_suggestion(sb->buf, sb->len);
-    if (match) {
-      if (is_crt)
-        strbuf_addstr(&colored, "\x1b[32m");
-      else
-        strbuf_addstr(&colored, "\x1b[90m");
-      strbuf_addstr(&colored, match + sb->len);
-      strbuf_addstr(&colored, "\x1b[0m");
-    }
-  }
-
-  /* Render buffer */
-  strbuf_addstr(&out, "\x1b[?25l"); /* Hide cursor */
-  strbuf_addstr(&out, "\r\x1b[2K"); /* CR and clear line */
   if (last_prompt)
     strbuf_addstr(&out, last_prompt);
 
-  if (colored.buf)
-    strbuf_addmem(&out, colored.buf, colored.len);
+  if (is_crt)
+    strbuf_addstr(&out, "\x1b[32m");
 
-  /* Position cursor precisely using absolute horizontal movement */
+  /* Just print the line raw for now to ensure visibility. */
+  strbuf_addstr(&out, line);
+
+  if (is_crt)
+    strbuf_addstr(&out, "\x1b[0m");
+
+  /* Position cursor relative to the start of the line we just drew. */
   {
     int i, cols = 0;
     for (i = 0; i < pos && line[i]; i++) {
@@ -487,15 +365,14 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
       else
         cols++;
     }
+    /* Move to absolute column. This handles wrapping better in some terms. */
     char esc[32];
     snprintf(esc, sizeof(esc), "\x1b[%zuG", (size_t)cols + prompt_w + 1);
     strbuf_addstr(&out, esc);
   }
 
-  strbuf_addstr(&out, "\x1b[?25h"); /* Show cursor */
+  strbuf_addstr(&out, "\x1b[?25h");
   write(fd, out.buf, out.len);
-
-  strbuf_free(&colored);
   strbuf_free(&out);
 }
 
