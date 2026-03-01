@@ -338,25 +338,29 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   const char *crt = var_get("MEOWSH_CRT");
   int is_crt = crt && strcmp(crt, "1") == 0;
   const char *last_prompt = prompt_last_line(prompt);
-  size_t prompt_w = visual_width(last_prompt);
 
-  /* CR then clear the current line and everything below it.
-   * This is more aggressive but solves the duplication if we wrap. */
+  /* CR then clear the current line and everything below it. */
   strbuf_addstr(&out, "\x1b[?25l\r\x1b[J");
 
   if (last_prompt)
     strbuf_addstr(&out, last_prompt);
 
+  /* SAVE CURSOR position immediately after the prompt header */
+  strbuf_addstr(&out, "\x1b[s");
+
   if (is_crt)
     strbuf_addstr(&out, "\x1b[32m");
 
-  /* Just print the line raw for now to ensure visibility. */
+  /* Print the input line */
   strbuf_addstr(&out, line);
 
   if (is_crt)
     strbuf_addstr(&out, "\x1b[0m");
 
-  /* Position cursor relative to the start of the line we just drew. */
+  /* RESTORE CURSOR to the end of the prompt header */
+  strbuf_addstr(&out, "\x1b[u");
+
+  /* Position cursor relative to prompt header using columns of the line buffer */
   {
     int i, cols = 0;
     for (i = 0; i < pos && line[i]; i++) {
@@ -365,10 +369,11 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
       else
         cols++;
     }
-    /* Move to absolute column. This handles wrapping better in some terms. */
-    char esc[32];
-    snprintf(esc, sizeof(esc), "\x1b[%zuG", (size_t)cols + prompt_w + 1);
-    strbuf_addstr(&out, esc);
+    if (cols > 0) {
+      char esc[32];
+      snprintf(esc, sizeof(esc), "\x1b[%dC", cols);
+      strbuf_addstr(&out, esc);
+    }
   }
 
   strbuf_addstr(&out, "\x1b[?25h");
