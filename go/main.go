@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -11,21 +10,19 @@ import (
 var sh Shell
 
 func mainLoop() {
-	reader := bufio.NewReader(os.Stdin)
+	le := NewLineEditor()
 	for {
+		prompt := ""
 		if sh.Interactive {
-			prompt := buildPrompt()
-			fmt.Print(prompt)
+			prompt = buildPrompt()
 		}
 
-		line, err := reader.ReadString('\n')
+		line, err := le.ReadLine(prompt)
 		if err != nil {
-			if err == io.EOF && len(line) == 0 {
+			if err == io.EOF {
 				break
 			}
-			if err != io.EOF {
-				continue
-			}
+			continue
 		}
 
 		if strings.TrimSpace(line) == "" {
@@ -35,7 +32,7 @@ func mainLoop() {
 		sh.Lineno++
 		line = expandAliasLine(line)
 
-		lexer := NewLexerWithReader(line, reader)
+		lexer := NewLexerWithPromptReader(line+"\n", le)
 		parser := NewParser(lexer)
 		node := parser.Parse()
 

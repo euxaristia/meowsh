@@ -12,10 +12,15 @@ type HeredocPending struct {
 	Delim string
 }
 
+type PromptReader interface {
+	ReadLine(prompt string) (string, error)
+}
+
 type Lexer struct {
 	input           string
 	pos             int
 	reader          *bufio.Reader
+	promptReader    PromptReader
 	pendingHeredocs []*HeredocPending
 }
 
@@ -27,6 +32,10 @@ func NewLexerWithReader(input string, reader *bufio.Reader) *Lexer {
 	return &Lexer{input: input, pos: 0, reader: reader}
 }
 
+func NewLexerWithPromptReader(input string, pr PromptReader) *Lexer {
+	return &Lexer{input: input, pos: 0, promptReader: pr}
+}
+
 func (l *Lexer) QueueHeredoc(redir *Redir, delim string) {
 	l.pendingHeredocs = append(l.pendingHeredocs, &HeredocPending{Redir: redir, Delim: delim})
 }
@@ -35,18 +44,23 @@ func (l *Lexer) readPendingHeredocs() {
 	for _, h := range l.pendingHeredocs {
 		var sb strings.Builder
 		for {
-			if sh.Interactive && l.reader != nil {
-				fmt.Print(varGet("PS2"))
-			}
 			var line string
-			if l.reader != nil {
-				line, _ = l.reader.ReadString('\n')
+			var err error
+			if l.promptReader != nil {
+				line, err = l.promptReader.ReadLine(varGet("PS2"))
+				if err == nil {
+					line += "\n"
+				}
+			} else if l.reader != nil {
+				if sh.Interactive {
+					fmt.Print(varGet("PS2"))
+				}
+				line, err = l.reader.ReadString('\n')
 			} else {
-				// If no reader, we can't read heredocs interactively. Just break.
 				break
 			}
 
-			if line == "" {
+			if err != nil || line == "" {
 				break
 			}
 
@@ -63,7 +77,13 @@ func (l *Lexer) readPendingHeredocs() {
 
 
 func (l *Lexer) readMore() bool {
-	if l.reader != nil {
+	if l.promptReader != nil {
+		line, err := l.promptReader.ReadLine(varGet("PS2"))
+		if err == nil {
+			l.input += line + "\n"
+			return true
+		}
+	} else if l.reader != nil {
 		if sh.Interactive {
 			fmt.Print(varGet("PS2"))
 		}
