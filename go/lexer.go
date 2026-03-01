@@ -109,6 +109,34 @@ func (l *Lexer) readToken() Token {
 		return Token{Type: TOK_NEWLINE, Value: "\n"}
 	}
 
+	if unicode.IsDigit(r) {
+		oldPos := l.pos
+		var isIO bool
+		var sb strings.Builder
+		sb.WriteRune(r)
+		for {
+			nr := l.NextRune()
+			if nr != -1 && unicode.IsDigit(nr) {
+				sb.WriteRune(nr)
+			} else if nr == '<' || nr == '>' {
+				if nr != -1 {
+					l.backup()
+				}
+				isIO = true
+				break
+			} else {
+				if nr != -1 {
+					l.backup()
+				}
+				break
+			}
+		}
+		if isIO {
+			return Token{Type: TOK_IO_NUMBER, Value: sb.String()}
+		}
+		l.pos = oldPos
+	}
+
 	if isOperator(r) {
 		return l.readOperator(r)
 	}

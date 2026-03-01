@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 type Parser struct {
 	lexer *Lexer
 }
@@ -91,10 +93,24 @@ func (p *Parser) parseSimpleCommand() *ASTNode {
 			break
 		}
 
+		fd := -1
+		if tok.Type == TOK_IO_NUMBER {
+			fdStr := p.lexer.NextToken().Value
+			fmt.Sscanf(fdStr, "%d", &fd)
+			tok = p.lexer.PeekToken()
+		}
+
 		if isRedirection(tok) {
 			op := p.lexer.NextToken().Value
+			if fd == -1 {
+				if op == "<" || op == "<<" || op == "<<-" || op == "<&" || op == "<>" {
+					fd = 0
+				} else {
+					fd = 1
+				}
+			}
 			fileTok := p.lexer.NextToken()
-			node.Redirs = append(node.Redirs, Redir{Op: op, File: fileTok.Value})
+			node.Redirs = append(node.Redirs, Redir{Op: op, File: fileTok.Value, Fd: fd})
 			continue
 		}
 

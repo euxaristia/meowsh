@@ -78,33 +78,95 @@ func execSimple(node *ASTNode) int {
 		return sh.LastStatus
 	}
 
-	handleRedirections(node.Redirs)
+	saved := handleRedirections(node.Redirs)
+	defer restoreFDs(saved)
 
 	status := execCommand(expandedArgs)
 	sh.LastStatus = status
 	return status
 }
 
-func handleRedirections(redirs []Redir) {
+type SavedFDs struct {
+	Stdin  *os.File
+	Stdout *os.File
+	Stderr *os.File
+	Opened []*os.File
+}
+
+func handleRedirections(redirs []Redir) *SavedFDs {
+	saved := &SavedFDs{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}
+
 	for _, redir := range redirs {
-		target := expandAll(redir.File)
-		switch redir.Op {
-		case ">":
-			f, _ := os.Create(target)
-			os.Stdout = f
-		case ">>":
-			f, _ := os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			os.Stdout = f
-		case "<":
-			f, _ := os.Open(target)
-			os.Stdin = f
-		case "2>":
-			f, _ := os.Create(target)
-			os.Stderr = f
-		case "2>>":
-			f, _ := os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			os.Stderr = f
+		if redir.Op == "<&" || redir.Op == ">&" {
+			var targetFd int
+			if redir.File == "-" {
+				continue
+			}
+			fmt.Sscanf(redir.File, "%d", &targetFd)
+
+			var targetFile *os.File
+			if targetFd == 0 {
+				targetFile = os.Stdin
+			} else if targetFd == 1 {
+				targetFile = os.Stdout
+			} else if targetFd == 2 {
+				targetFile = os.Stderr
+			}
+
+			if redir.Fd == 0 || (redir.Fd == -1 && redir.Op == "<&") {
+				os.Stdin = targetFile
+			} else if redir.Fd == 1 || (redir.Fd == -1 && redir.Op == ">&") {
+				os.Stdout = targetFile
+			} else if redir.Fd == 2 {
+				os.Stderr = targetFile
+			}
+			continue
 		}
+
+		target := expandAll(redir.File)
+		var f *os.File
+		var err error
+
+		switch redir.Op {
+		case ">", ">|":
+			f, err = os.Create(target)
+		case ">>":
+			f, err = os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		case "<":
+			f, err = os.Open(target)
+		case "<>":
+			f, err = os.OpenFile(target, os.O_RDWR|os.O_CREATE, 0644)
+		}
+
+		if err == nil && f != nil {
+			saved.Opened = append(saved.Opened, f)
+			if redir.Fd == 0 || (redir.Fd == -1 && (redir.Op == "<" || redir.Op == "<>")) {
+				os.Stdin = f
+			} else if redir.Fd == 1 || (redir.Fd == -1 && (redir.Op == ">" || redir.Op == ">>" || redir.Op == ">|")) {
+				os.Stdout = f
+			} else if redir.Fd == 2 {
+				os.Stderr = f
+			}
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "meowsh: %s: %v\n", target, err)
+		}
+	}
+	return saved
+}
+
+func restoreFDs(saved *SavedFDs) {
+	if saved == nil {
+		return
+	}
+	os.Stdin = saved.Stdin
+	os.Stdout = saved.Stdout
+	os.Stderr = saved.Stderr
+	for _, f := range saved.Opened {
+		f.Close()
 	}
 }
 
