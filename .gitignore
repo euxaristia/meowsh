@@ -1,4 +1,5 @@
 *.o
 meowsh
+meowsh_go
 tests/fuzzer
 tests/test_completion
