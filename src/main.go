@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -116,9 +117,14 @@ func main() {
 	}
 
 	if sh.Interactive {
+		// Ignore terminal control signals
+		signal.Ignore(syscall.SIGTTOU, syscall.SIGTTIN, syscall.SIGTSTP, syscall.SIGQUIT)
+
 		sh.ShellPid = os.Getpid()
 		syscall.Setpgid(sh.ShellPid, sh.ShellPid)
-		syscall.Syscall(syscall.SYS_IOCTL, uintptr(os.Stdin.Fd()), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
+
+		// Take control of the terminal
+		syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
 
 		fmt.Fprintf(os.Stderr, "meowsh — welcome! (type 'exit' to quit)\n")
 	}

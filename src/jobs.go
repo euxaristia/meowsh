@@ -107,7 +107,7 @@ func jobWaitFg(j *Job) int {
 
 	// Give terminal back to shell
 	if sh.Interactive {
-		syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdin), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
+		syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
 	}
 
 	return status
@@ -158,7 +158,7 @@ func builtinFg(args []string) int {
 	j.Foreground = true
 	
 	// Give terminal to job
-	syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdin), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&j.Pgid)))
+	syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&j.Pgid)))
 	
 	// Continue job
 	syscall.Kill(-j.Pgid, syscall.SIGCONT)

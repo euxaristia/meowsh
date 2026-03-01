@@ -409,7 +409,7 @@ func execCommand(args []string, foreground bool) int {
 
 	if sh.Interactive && foreground {
 		// Give terminal to job
-		syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdin), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&pgid)))
+		syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&pgid)))
 	}
 
 	if foreground {
