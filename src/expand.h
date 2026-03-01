@@ -14,7 +14,7 @@ char **expand_words(struct word *words, int *countp);
 
 /* Expand a single word to a single string (no field splitting/glob).
  * Used for assignments, here-doc bodies, etc. */
-char *expand_word(struct word *w, int quoted);
+char *expand_word(const struct word *w, int quoted);
 
 /* Expand assignment value */
 

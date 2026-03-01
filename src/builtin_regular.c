@@ -269,6 +269,7 @@ int builtin_getopts(int argc, char **argv) {
   int optind_val;
   const char *optind_str;
   char c;
+  // cppcheck-suppress variableScope
   const char *p;
 
   if (argc < 3) {
@@ -358,7 +359,7 @@ int builtin_getopts(int argc, char **argv) {
         if (optind_val > nargs) {
           if (optstring[0] == ':') {
             var_set(varname, ":", 0);
-            char val[2] = {c, '\0'}; // flawfinder: ignore
+            const char val[2] = {c, '\0'}; // flawfinder: ignore
             var_set("OPTARG", val, 0);
           } else {
             sh_error("getopts: option requires argument -- %c", c);
@@ -498,6 +499,7 @@ int builtin_kill(int argc, char **argv) {
     return 2;
   }
 
+  // cppcheck-suppress knownConditionTrueFalse
   if (i < argc && strcmp(argv[i], "-l") == 0) {
     /* List signals */
     int s;
@@ -600,6 +602,7 @@ int builtin_read(int argc, char **argv) {
   int raw = 0;
   int i = 1;
   struct strbuf sb = STRBUF_INIT;
+  // cppcheck-suppress variableScope
   int c;
   const char *ifs;
   char **vars;

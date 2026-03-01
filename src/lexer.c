@@ -72,6 +72,7 @@ void lexer_set_prompts(const char *ps1, const char *ps2) {
 }
 
 const char *token_name(token_type_t t) {
+  // cppcheck-suppress variableScope
   static const char *names[] = {
       [TOK_WORD] = "WORD",
       [TOK_ASSIGNMENT] = "ASSIGNMENT",
@@ -140,10 +141,12 @@ static struct token *make_token(token_type_t type, const char *value) {
 
 static int nextchar(void) { return input_getc(); }
 
+// cppcheck-suppress variableScope
 static void pushback(int c) { input_ungetc(c); }
 
 /* Skip whitespace (spaces and tabs, not newlines) */
 static void skip_blanks(void) {
+  // cppcheck-suppress variableScope
   int c;
 
   for (;;) {

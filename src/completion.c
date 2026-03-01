@@ -211,7 +211,7 @@ static void complete_path(struct completion_result *cr, const char *pfx,
 static void complete_exe_in_dir(struct completion_result *cr,
                                 const char *dir_path, const char *pfx) {
   DIR *dir = opendir(dir_path);
-  struct dirent *de;
+  const struct dirent *de;
   if (!dir)
     return;
 

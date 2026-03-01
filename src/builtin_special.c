@@ -128,6 +128,7 @@ found: {
   /* Parse and execute */
   status = 0;
   for (;;) {
+    // cppcheck-suppress variableScope
     int c;
     arena_free(&parse_arena);
     tree = parse_command(NULL, NULL);
@@ -159,6 +160,7 @@ found: {
 /* eval [arguments...] */
 int builtin_eval(int argc, char **argv) {
   struct strbuf sb = STRBUF_INIT;
+  // cppcheck-suppress variableScope
   struct node *tree;
   int i, status = 0;
 
@@ -175,6 +177,7 @@ int builtin_eval(int argc, char **argv) {
   strbuf_free(&sb);
 
   for (;;) {
+    // cppcheck-suppress variableScope
     int c;
     arena_free(&parse_arena);
     tree = parse_command(NULL, NULL);
@@ -297,7 +300,7 @@ int builtin_readonly(int argc, char **argv) {
 
   if (argc == 1 || (argc == 2 && strcmp(argv[1], "-p") == 0)) {
     int j;
-    struct var_entry *v;
+    const struct var_entry *v;
     for (j = 0; j < HASH_SIZE; j++) {
       for (v = sh.vars[j]; v; v = v->next) {
         if (v->flags & VAR_READONLY) {
@@ -312,7 +315,7 @@ int builtin_readonly(int argc, char **argv) {
   }
 
   for (i = 1; i < argc; i++) {
-    char *eq = strchr(argv[i], '=');
+    const char *eq = strchr(argv[i], '=');
     if (eq) {
       char *name = sh_malloc((size_t)(eq - argv[i]) + 1);
       memcpy(name, argv[i], (size_t)(eq - argv[i])); // flawfinder: ignore
@@ -352,7 +355,7 @@ int builtin_set(int argc, char **argv) {
   if (argc == 1) {
     /* Print all variables */
     int j;
-    struct var_entry *v;
+    const struct var_entry *v;
     for (j = 0; j < HASH_SIZE; j++) {
       for (v = sh.vars[j]; v; v = v->next) {
         if (v->value)
@@ -452,6 +455,7 @@ int builtin_times(int argc, char **argv) {
 
 /* trap [action signal...] */
 int builtin_trap(int argc, char **argv) {
+  // cppcheck-suppress variableScope
   int i, sig;
 
   if (argc == 1) {

@@ -661,7 +661,7 @@ static char *expand_raw(const char *s, int quoted, int *was_quoted) {
   return strbuf_detach(&sb);
 }
 
-char *expand_word(struct word *w, int quoted) {
+char *expand_word(const struct word *w, int quoted) {
   struct strbuf sb = STRBUF_INIT;
   const struct wordpart *p;
 

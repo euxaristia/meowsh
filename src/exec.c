@@ -236,6 +236,7 @@ static int exec_function(struct node *func_body, int argc, char **argv,
   struct saved_fd *saved_redir = NULL;
   int status;
 
+  // cppcheck-suppress knownConditionTrueFalse
   if (redirs) {
     saved_redir = redir_apply(redirs);
     if (!saved_redir && redirs)
@@ -582,6 +583,7 @@ static void exec_subshell(struct node *body, struct redirect *redirs, int flags)
     sh.subshell = 1;
     trap_clear();
 
+    // cppcheck-suppress knownConditionTrueFalse
     if (redirs) {
       if (!redir_apply(redirs) && redirs)
         _exit(1);

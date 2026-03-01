@@ -278,7 +278,7 @@ p_simple_command(void)
 		token_type_t t = peek_type();
 
 		if (t == TOK_ASSIGNMENT && !have_word) {
-			char *eq, *name;
+			const char *eq, *name;
 			struct word *value = NULL;
 
 			next_token();
@@ -376,7 +376,7 @@ p_until_clause(void)
 static struct node *
 p_for_clause(void)
 {
-	char *var;
+	const char *var;
 	struct word *words = NULL;
 	struct node *body;
 	struct redirect *redirs;
@@ -499,7 +499,7 @@ p_compound_command(void)
 static struct node *
 try_function_def(void)
 {
-	struct token *tok = lexer_peek();
+	const struct token *tok = lexer_peek();
 	const char *name;
 
 	if (tok->type != TOK_WORD || !is_name(tok->value))

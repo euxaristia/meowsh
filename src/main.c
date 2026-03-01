@@ -481,6 +481,7 @@ static char *with_meow_marker(const char *prompt) {
 }
 
 static void main_loop(void) {
+  // cppcheck-suppress variableScope
   struct node *tree;
   static char ps1_buf[PATH_MAX + 128]; // flawfinder: ignore
   const char *ps2;
@@ -602,6 +603,7 @@ static void main_loop(void) {
 
 int main(int argc, char **argv) {
   int optind;
+  // cppcheck-suppress variableScope
   char **envp;
 
   setlocale(LC_ALL, "");

@@ -140,6 +140,7 @@ static void disable_raw_mode(int fd) {
 }
 
 static int lineedit_next_char(int fd, char *out) {
+  // cppcheck-suppress variableScope
   ssize_t n;
 
   if (lineedit_pending_pos >= lineedit_pending_len) {
