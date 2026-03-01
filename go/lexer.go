@@ -1,22 +1,86 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"strings"
 	"unicode"
 )
 
+type HeredocPending struct {
+	Redir *Redir
+	Delim string
+}
+
 type Lexer struct {
-	input string
-	pos   int
+	input           string
+	pos             int
+	reader          *bufio.Reader
+	pendingHeredocs []*HeredocPending
 }
 
 func NewLexer(input string) *Lexer {
 	return &Lexer{input: input, pos: 0}
 }
 
+func NewLexerWithReader(input string, reader *bufio.Reader) *Lexer {
+	return &Lexer{input: input, pos: 0, reader: reader}
+}
+
+func (l *Lexer) QueueHeredoc(redir *Redir, delim string) {
+	l.pendingHeredocs = append(l.pendingHeredocs, &HeredocPending{Redir: redir, Delim: delim})
+}
+
+func (l *Lexer) readPendingHeredocs() {
+	for _, h := range l.pendingHeredocs {
+		var sb strings.Builder
+		for {
+			if sh.Interactive && l.reader != nil {
+				fmt.Print(varGet("PS2"))
+			}
+			var line string
+			if l.reader != nil {
+				line, _ = l.reader.ReadString('\n')
+			} else {
+				// If no reader, we can't read heredocs interactively. Just break.
+				break
+			}
+
+			if line == "" {
+				break
+			}
+
+			trimmed := strings.TrimRight(line, "\r\n")
+			if trimmed == h.Delim {
+				break
+			}
+			sb.WriteString(line)
+		}
+		h.Redir.HeredocBody = sb.String()
+	}
+	l.pendingHeredocs = nil
+}
+
+
+func (l *Lexer) readMore() bool {
+	if l.reader != nil {
+		if sh.Interactive {
+			fmt.Print(varGet("PS2"))
+		}
+		line, err := l.reader.ReadString('\n')
+		if err == nil || len(line) > 0 {
+			l.input += line
+			return true
+		}
+	}
+	return false
+}
+
 func (l *Lexer) NextRune() rune {
 	if l.pos >= len(l.input) {
-		return -1
+		if !l.readMore() {
+			return -1
+		}
 	}
 	r := rune(l.input[l.pos])
 	l.pos++
@@ -106,6 +170,7 @@ func (l *Lexer) readToken() Token {
 	}
 
 	if r == '\n' {
+		l.readPendingHeredocs()
 		return Token{Type: TOK_NEWLINE, Value: "\n"}
 	}
 

@@ -144,9 +144,10 @@ type ASTNode struct {
 }
 
 type Redir struct {
-	Op   string
-	File string
-	Fd   int
+	Op          string
+	File        string
+	Fd          int
+	HeredocBody string
 }
 
 type CaseItem struct {

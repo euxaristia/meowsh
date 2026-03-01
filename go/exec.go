@@ -140,11 +140,19 @@ func handleRedirections(redirs []Redir) *SavedFDs {
 			f, err = os.Open(target)
 		case "<>":
 			f, err = os.OpenFile(target, os.O_RDWR|os.O_CREATE, 0644)
+		case "<<", "<<-":
+			f, err = os.CreateTemp("", "meowsh-heredoc-*")
+			if err == nil {
+				body := redir.HeredocBody
+				// Variable expansion in heredocs is usually done unless delim is quoted, but for now we write as is or basic expand.
+				f.WriteString(body)
+				f.Seek(0, 0)
+			}
 		}
 
 		if err == nil && f != nil {
 			saved.Opened = append(saved.Opened, f)
-			if redir.Fd == 0 || (redir.Fd == -1 && (redir.Op == "<" || redir.Op == "<>")) {
+			if redir.Fd == 0 || (redir.Fd == -1 && (redir.Op == "<" || redir.Op == "<>" || redir.Op == "<<" || redir.Op == "<<-")) {
 				os.Stdin = f
 			} else if redir.Fd == 1 || (redir.Fd == -1 && (redir.Op == ">" || redir.Op == ">>" || redir.Op == ">|")) {
 				os.Stdout = f

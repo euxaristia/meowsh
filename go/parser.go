@@ -110,7 +110,12 @@ func (p *Parser) parseSimpleCommand() *ASTNode {
 				}
 			}
 			fileTok := p.lexer.NextToken()
-			node.Redirs = append(node.Redirs, Redir{Op: op, File: fileTok.Value, Fd: fd})
+			redir := Redir{Op: op, File: fileTok.Value, Fd: fd}
+			node.Redirs = append(node.Redirs, redir)
+			
+			if op == "<<" || op == "<<-" {
+				p.lexer.QueueHeredoc(&node.Redirs[len(node.Redirs)-1], fileTok.Value)
+			}
 			continue
 		}
 

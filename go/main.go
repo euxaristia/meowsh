@@ -20,13 +20,14 @@ func mainLoop() {
 
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && len(line) == 0 {
 				break
 			}
-			continue
+			if err != io.EOF {
+				continue
+			}
 		}
 
-		line = strings.TrimRight(line, "\r\n")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -34,7 +35,7 @@ func mainLoop() {
 		sh.Lineno++
 		line = expandAliasLine(line)
 
-		lexer := NewLexer(line)
+		lexer := NewLexerWithReader(line, reader)
 		parser := NewParser(lexer)
 		node := parser.Parse()
 
