@@ -34,10 +34,6 @@
 #include <sys/wait.h>
 
 /* Internal expand state */
-struct expand_ctx {
-  struct strbuf sb;
-  int quoted; /* inside double quotes */
-};
 
 static char *expand_param(const char *s, int quoted);
 static char *expand_cmdsub(const char *cmd);
@@ -48,7 +44,6 @@ static void expand_tilde(struct strbuf *sb, const char **sp);
 static void expand_tilde(struct strbuf *sb, const char **sp) {
   const char *s = *sp;
   const char *end;
-  const char *home;
 
   if (*s != '~') {
     return;
@@ -62,7 +57,7 @@ static void expand_tilde(struct strbuf *sb, const char **sp) {
 
   if (end == s) {
     /* ~/... -> $HOME/... */
-    home = var_get("HOME");
+    const char *home = var_get("HOME");
     if (home)
       strbuf_addstr(sb, home);
     else
@@ -70,7 +65,7 @@ static void expand_tilde(struct strbuf *sb, const char **sp) {
   } else {
     /* ~user/... -> lookup user's home */
     char *user = sh_malloc((size_t)(end - s) + 1);
-    struct passwd *pw;
+    const struct passwd *pw;
 
     memcpy(user, s, (size_t)(end - s)); // flawfinder: ignore
     user[end - s] = '\0';
@@ -668,7 +663,7 @@ static char *expand_raw(const char *s, int quoted, int *was_quoted) {
 
 char *expand_word(struct word *w, int quoted) {
   struct strbuf sb = STRBUF_INIT;
-  struct wordpart *p;
+  const struct wordpart *p;
 
   if (!w)
     return sh_strdup("");
@@ -776,8 +771,6 @@ char **expand_words(struct word *words, int *countp) {
     *countp = argc;
   return argv;
 }
-
-char *expand_assignment(struct word *w) { return expand_word(w, 0); }
 
 void expand_free(char **argv) {
   int i;

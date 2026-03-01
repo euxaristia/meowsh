@@ -34,7 +34,7 @@ static const struct optmap optmap[] = {
 	{ 0, NULL, 0 }
 };
 
-int
+static int
 option_set_flag(char c, int set)
 {
 	const struct optmap *om;

@@ -39,10 +39,6 @@ void lineedit_init(void) {
   last_submitted_line = sh_strdup("");
 }
 
-const char *lineedit_last_line(void) {
-  return last_submitted_line ? last_submitted_line : "";
-}
-
 static void history_add_at(const char *line, time_t when) {
   if (!line || !*line)
     return;
@@ -59,7 +55,7 @@ static void history_add_at(const char *line, time_t when) {
   history_time[history_count - 1] = when > 0 ? when : time(NULL);
 }
 
-void history_add(const char *line) { history_add_at(line, time(NULL)); }
+static void history_add(const char *line) { history_add_at(line, time(NULL)); }
 
 static int parse_time_prefix(const char *s, time_t *out) {
   struct tm tm;
@@ -259,29 +255,6 @@ static int lineedit_read_escape_key(int fd, int *key) {
   return 1;
 }
 
-static int command_exists_for_highlight(const char *token) {
-  if (!token || !*token)
-    return 0;
-
-  if (alias_get(token))
-    return 1;
-
-  if (strchr(token, '/')) {
-    int fd = open(token, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-    return fd >= 0;
-  }
-
-  {
-    struct cmd_entry entry;
-    find_command(token, &entry);
-    if (entry.type == CMD_EXTERNAL) {
-      free(entry.u.path);
-      return 1;
-    }
-    return entry.type != CMD_NOT_FOUND;
-  }
-}
-
 static const char *lineedit_find_history_suggestion(const char *line,
                                                     size_t len) {
   int i;
@@ -295,26 +268,6 @@ static const char *lineedit_find_history_suggestion(const char *line,
   }
 
   return NULL;
-}
-
-static size_t visual_width(const char *s) {
-  size_t w = 0;
-  int in_esc = 0;
-  if (!s)
-    return 0;
-  while (*s) {
-    if (*s == '\x1b') {
-      in_esc = 1;
-    } else if (in_esc) {
-      if ((*s >= '@' && *s <= '~'))
-        in_esc = 0;
-    } else {
-      if (((unsigned char)*s & 0xC0) != 0x80)
-        w++;
-    }
-    s++;
-  }
-  return w;
 }
 
 static const char *prompt_last_line(const char *prompt) {

@@ -24,7 +24,7 @@ static struct alias_entry *
 alias_lookup(const char *name)
 {
 	unsigned int h = hash_string(name);
-	struct alias_entry *a;
+	const struct alias_entry *a;
 
 	for (a = sh.aliases[h]; a; a = a->next) {
 		if (strcmp(a->name, name) == 0)
@@ -61,7 +61,7 @@ alias_set(const char *name, const char *value)
 const char *
 alias_get(const char *name)
 {
-	struct alias_entry *a = alias_lookup(name);
+	const struct alias_entry *a = alias_lookup(name);
 	return a ? a->value : NULL;
 }
 

@@ -13,12 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void strbuf_init(struct strbuf *sb) {
-  sb->buf = NULL;
-  sb->len = 0;
-  sb->cap = 0;
-}
-
 void strbuf_reset(struct strbuf *sb) {
   sb->len = 0;
   if (sb->buf)
@@ -84,12 +78,6 @@ char *strbuf_detach(struct strbuf *sb) {
   return s;
 }
 
-char *strbuf_to_string(struct strbuf *sb) {
-  if (!sb->buf)
-    return sh_strdup("");
-  return sh_strdup(sb->buf);
-}
-
 int is_name_char(char c) {
   return isalpha((unsigned char)c) || c == '_' || isdigit((unsigned char)c);
 }
@@ -101,16 +89,6 @@ int is_name(const char *s) {
     return 0;
   for (s++; *s; s++) {
     if (!is_name_char(*s))
-      return 0;
-  }
-  return 1;
-}
-
-int is_number(const char *s) {
-  if (!s || !*s)
-    return 0;
-  for (; *s; s++) {
-    if (!isdigit((unsigned char)*s))
       return 0;
   }
   return 1;
@@ -138,14 +116,6 @@ int prefix(const char *s, const char *pfx) {
     pfx++;
   }
   return 1;
-}
-
-char *sh_stpcpy(char *dst, const char *src) {
-  while ((*dst = *src) != '\0') {
-    dst++;
-    src++;
-  }
-  return dst;
 }
 
 long sh_strtol(const char *s, char **endp, int base) {

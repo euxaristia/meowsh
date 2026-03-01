@@ -32,7 +32,7 @@ int builtin_alias(int argc, char **argv) {
   }
 
   for (i = 1; i < argc; i++) {
-    char *eq = strchr(argv[i], '=');
+    const char *eq = strchr(argv[i], '=');
     if (eq) {
       char *name = sh_malloc((size_t)(eq - argv[i]) + 1);
       memcpy(name, argv[i], (size_t)(eq - argv[i])); // flawfinder: ignore
@@ -345,7 +345,7 @@ int builtin_getopts(int argc, char **argv) {
     }
 
     {
-      char val[2] = {c, '\0'}; // flawfinder: ignore
+      const char val[2] = {c, '\0'}; // flawfinder: ignore
       var_set(varname, val, 0);
     }
 
@@ -428,7 +428,7 @@ int builtin_hash(int argc, char **argv) {
     /* Print hash table */
     int j;
     for (j = 0; j < HASH_SIZE; j++) {
-      struct hash_entry *he;
+      const struct hash_entry *he;
       for (he = sh.cmd_hash[j]; he; he = he->next)
         printf("%s\t%s\n", he->name, he->path);
     }
@@ -533,7 +533,7 @@ int builtin_kill(int argc, char **argv) {
 
   for (; i < argc; i++) {
     if (argv[i][0] == '%') {
-      struct job *j = job_parse_spec(argv[i]);
+      const struct job *j = job_parse_spec(argv[i]);
       if (j) {
         if (kill(-j->pgid, sig) < 0)
           sh_errorf("kill");

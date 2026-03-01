@@ -16,6 +16,8 @@
 
 #include <string.h>
 
+static char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted);
+
 static struct token *peeked;
 static const char *ps1_str;
 static const char *ps2_str;
@@ -69,8 +71,6 @@ void lexer_set_prompts(const char *ps1, const char *ps2) {
   sh.cur_prompt = ps1;
 }
 
-void lexer_set_alias(int enable) { alias_enabled = enable; }
-
 const char *token_name(token_type_t t) {
   static const char *names[] = {
       [TOK_WORD] = "WORD",
@@ -118,7 +118,7 @@ const char *token_name(token_type_t t) {
   return "???";
 }
 
-token_type_t reserved_word(const char *s) {
+static token_type_t reserved_word(const char *s) {
   int i;
 
   for (i = 0; reserved_words[i].name; i++) {
@@ -205,7 +205,7 @@ void lexer_clear_heredocs(void) {
   pending_heredocs = NULL;
 }
 
-char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted) {
+static char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted) {
   struct strbuf sb = STRBUF_INIT;
   int c;
   size_t dlen = strlen(delim); // flawfinder: ignore // flawfinder: ignore
@@ -559,7 +559,7 @@ done:
   }
 
   {
-    char *word = arena_strdup(&parse_arena, sb.buf);
+    const char *word = arena_strdup(&parse_arena, sb.buf);
     struct token *tok;
     strbuf_free(&sb);
 
@@ -638,7 +638,7 @@ static struct token *read_operator(int c) {
 
   /* Should not reach here */
   {
-    char buf[2] = {(char)c, '\0'}; // flawfinder: ignore
+    const char buf[2] = {(char)c, '\0'}; // flawfinder: ignore
     return make_token(TOK_WORD, buf);
   }
 }
@@ -692,7 +692,7 @@ static struct token *lexer_read_token(void) {
         strbuf_addch(&digits, (char)nc);
       } else if (nc == '<' || nc == '>') {
         /* This is an IO_NUMBER */
-        char *val = arena_strdup(&parse_arena, digits.buf);
+        const char *val = arena_strdup(&parse_arena, digits.buf);
         struct token *tok;
         strbuf_free(&digits);
         pushback(nc);
@@ -794,4 +794,3 @@ struct token *lexer_peek(void) {
   return peeked;
 }
 
-void lexer_consume(void) { peeked = NULL; }

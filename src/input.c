@@ -209,32 +209,3 @@ void input_ungetc(int c) {
 
 void input_clear_unget(void) { unget_char = -1; }
 
-char *input_readline(const char *prompt) {
-  if (sh.interactive && sh.input && sh.input->type == INPUT_FD &&
-      sh.input->u.fd == STDIN_FILENO) {
-    return lineedit_read(prompt); // flawfinder: ignore
-  }
-
-  {
-    struct strbuf sb = STRBUF_INIT;
-    int c;
-
-    if (prompt && sh.interactive) {
-      fputs(prompt, stderr);
-      fflush(stderr);
-    }
-
-    for (;;) {
-      c = input_getc();
-      if (c < 0) {
-        if (sb.len > 0)
-          return strbuf_detach(&sb);
-        strbuf_free(&sb);
-        return NULL;
-      }
-      strbuf_addch(&sb, (char)c);
-      if (c == '\n')
-        return strbuf_detach(&sb);
-    }
-  }
-}

@@ -21,13 +21,10 @@ struct token *lexer_next(void);
 struct token *lexer_peek(void);
 
 /* Consume the peeked token */
-void lexer_consume(void);
 
 /* Check if a word is a reserved word and return its token type */
-token_type_t reserved_word(const char *s);
 
 /* Read a here-document body */
-char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted);
 
 /* Queue a heredoc to be read after newline */
 void queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
@@ -37,7 +34,6 @@ void queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
 void lexer_clear_heredocs(void);
 
 /* Enable/disable alias expansion in the lexer */
-void lexer_set_alias(int enable);
 
 /* Token type name for debug */
 const char *token_name(token_type_t t);

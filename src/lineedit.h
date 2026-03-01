@@ -13,7 +13,6 @@ void lineedit_init(void);
 char *lineedit_read(const char *prompt);
 
 /* Add a line to history */
-void history_add(const char *line);
 
 /* Print history */
 void lineedit_print_history(void);
@@ -22,6 +21,5 @@ void history_clear(void);
 /* Save/load history to/from file */
 void history_load(const char *path);
 void history_save(const char *path);
-const char *lineedit_last_line(void);
 
 #endif /* MEOWSH_LINEEDIT_H */

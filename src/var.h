@@ -54,9 +54,7 @@ int var_shift(int n);
 const char *var_special(int c);
 
 /* Lookup variable entry */
-struct var_entry *var_lookup(const char *name);
 
 /* Iterate all exported variables */
-void var_walk_exports(void (*fn)(const char *name, const char *value));
 
 #endif /* MEOWSH_VAR_H */

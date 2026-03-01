@@ -144,7 +144,7 @@ static void complete_path(struct completion_result *cr, const char *pfx,
   const char *base_pfx;
   char *word_prefix;
   DIR *dir;
-  struct dirent *de;
+  const struct dirent *de;
   const char *slash = strrchr(pfx, '/');
   int show_dotfiles;
 
@@ -240,7 +240,7 @@ static void complete_command(struct completion_result *cr, const char *pfx) {
   /* Aliases */
   int i;
   for (i = 0; i < HASH_SIZE; i++) {
-    struct alias_entry *ae = sh.aliases[i];
+    const struct alias_entry *ae = sh.aliases[i];
     while (ae) {
       if (prefix(ae->name, pfx))
         add_match(cr, ae->name);
@@ -250,7 +250,7 @@ static void complete_command(struct completion_result *cr, const char *pfx) {
 
   /* Functions */
   for (i = 0; i < HASH_SIZE; i++) {
-    struct func_entry *fe = sh.functions[i];
+    const struct func_entry *fe = sh.functions[i];
     while (fe) {
       if (prefix(fe->name, pfx))
         add_match(cr, fe->name);
@@ -263,7 +263,7 @@ static void complete_command(struct completion_result *cr, const char *pfx) {
   if (path) {
     char *p = strdup(path);
     char *saveptr;
-    char *dir = strtok_r(p, ":", &saveptr);
+    const char *dir = strtok_r(p, ":", &saveptr);
     while (dir) {
       complete_exe_in_dir(cr, dir, pfx);
       dir = strtok_r(NULL, ":", &saveptr);

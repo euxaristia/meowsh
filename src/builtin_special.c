@@ -262,7 +262,7 @@ int builtin_export(int argc, char **argv) {
   if (argc == 1 || (argc == 2 && strcmp(argv[1], "-p") == 0)) {
     /* Print all exports */
     int j;
-    struct var_entry *v;
+    const struct var_entry *v;
     for (j = 0; j < HASH_SIZE; j++) {
       for (v = sh.vars[j]; v; v = v->next) {
         if (v->flags & VAR_EXPORT) {
@@ -277,7 +277,7 @@ int builtin_export(int argc, char **argv) {
   }
 
   for (i = 1; i < argc; i++) {
-    char *eq = strchr(argv[i], '=');
+    const char *eq = strchr(argv[i], '=');
     if (eq) {
       char *name = sh_malloc((size_t)(eq - argv[i]) + 1);
       memcpy(name, argv[i], (size_t)(eq - argv[i])); // flawfinder: ignore

@@ -39,14 +39,6 @@ sh_error(const char *fmt, ...) {
 }
 
 void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
-sh_warn(const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  sh_vmsg("warning", fmt, ap);
-  va_end(ap);
-}
-
-void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
 sh_fatal(const char *fmt, ...)
 
 {

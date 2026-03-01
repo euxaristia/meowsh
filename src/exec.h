@@ -16,10 +16,8 @@
 int exec_node(struct node *n, int flags);
 
 /* Execute a simple command */
-int exec_simple_cmd(struct node *n, int flags);
 
 /* Execute a pipeline */
-int exec_pipeline(struct node *n);
 
 /* Search for command: special builtin, function, regular builtin, PATH */
 typedef enum {
@@ -42,6 +40,5 @@ struct cmd_entry {
 void find_command(const char *name, struct cmd_entry *entry);
 
 /* Subshell execution */
-void exec_subshell(struct node *body, struct redirect *redirs, int flags);
 
 #endif /* MEOWSH_EXEC_H */

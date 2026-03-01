@@ -34,7 +34,5 @@ void trap_print(void);
 void sigchld_handler(int sig);
 
 /* Block/unblock signals during critical sections */
-void trap_block(void);
-void trap_unblock(void);
 
 #endif /* MEOWSH_TRAP_H */

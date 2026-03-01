@@ -247,22 +247,3 @@ sigchld_handler(int sig)
 	sh.any_trap_pending = 1;
 }
 
-void
-trap_block(void)
-{
-	sigset_t set;
-
-	sigemptyset(&set);
-	sigaddset(&set, SIGCHLD);
-	sigprocmask(SIG_BLOCK, &set, NULL);
-}
-
-void
-trap_unblock(void)
-{
-	sigset_t set;
-
-	sigemptyset(&set);
-	sigaddset(&set, SIGCHLD);
-	sigprocmask(SIG_UNBLOCK, &set, NULL);
-}

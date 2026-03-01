@@ -10,7 +10,6 @@
 void sh_error(const char *fmt, ...);
 
 /* Print warning */
-void sh_warn(const char *fmt, ...);
 
 /* Print error and exit with status 2 */
 void sh_fatal(const char *fmt, ...) __attribute__((noreturn));

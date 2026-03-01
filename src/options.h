@@ -13,7 +13,6 @@ int options_parse(int argc, char **argv);
 int options_set(const char *s);
 
 /* Set a single option by character, returns 0 on success */
-int option_set_flag(char c, int set);
 
 /* Get current option string for "set +o" output */
 char *options_to_string(void);

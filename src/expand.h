@@ -17,7 +17,6 @@ char **expand_words(struct word *words, int *countp);
 char *expand_word(struct word *w, int quoted);
 
 /* Expand assignment value */
-char *expand_assignment(struct word *w);
 
 /* Free an expanded argv array */
 void expand_free(char **argv);

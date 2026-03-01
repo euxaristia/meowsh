@@ -301,7 +301,7 @@ static void xtrace(int argc, char **argv) {
 }
 
 /* Execute a simple command */
-int exec_simple_cmd(struct node *n, int flags) {
+static int exec_simple_cmd(struct node *n, int flags) {
   char **argv;
   int argc;
   struct cmd_entry entry;
@@ -472,7 +472,7 @@ int exec_simple_cmd(struct node *n, int flags) {
 }
 
 /* Execute a pipeline */
-int exec_pipeline(struct node *n) {
+static int exec_pipeline(struct node *n) {
   int ncmds = n->data.pipeline.ncmds;
   struct node **cmds = n->data.pipeline.cmds;
   int i;
@@ -567,7 +567,7 @@ int exec_pipeline(struct node *n) {
   return status;
 }
 
-void exec_subshell(struct node *body, struct redirect *redirs, int flags) {
+static void exec_subshell(struct node *body, struct redirect *redirs, int flags) {
   pid_t pid;
 
   pid = fork();

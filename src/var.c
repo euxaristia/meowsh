@@ -47,7 +47,7 @@ void var_init(void) {
   }
 }
 
-struct var_entry *var_lookup(const char *name) {
+static struct var_entry *var_lookup(const char *name) {
   unsigned int h = hash_string(name);
   struct var_entry *v;
 
@@ -166,7 +166,7 @@ void var_import(const char *envstr) {
 char **var_environ(void) {
   int count = 0;
   int i;
-  struct var_entry *v;
+  const struct var_entry *v;
   char **env;
 
   /* Count exported variables */
@@ -311,14 +311,3 @@ const char *var_special(int c) {
   }
 }
 
-void var_walk_exports(void (*fn)(const char *name, const char *value)) {
-  int i;
-  struct var_entry *v;
-
-  for (i = 0; i < HASH_SIZE; i++) {
-    for (v = sh.vars[i]; v; v = v->next) {
-      if ((v->flags & VAR_EXPORT) && v->value)
-        fn(v->name, v->value);
-    }
-  }
-}
