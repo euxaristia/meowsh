@@ -61,6 +61,6 @@ EOF
 log3="$tmpdir/case3.log"
 run_tty_case "exit\n" "$log3" env -i MEOWSH_STARSHIP=0 PATH="$PATH" HOME="${HOME:-/tmp}" TERM="${TERM:-xterm-256color}" ENV="$rc_empty_ps1"
 strip_ansi <"$log3" >"$tmpdir/case3.stripped"
-grep -F "🐱 " "$tmpdir/case3.stripped" >/dev/null
+grep -F "𓃠 " "$tmpdir/case3.stripped" >/dev/null
 
 echo "Interactive regression tests passed."
