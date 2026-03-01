@@ -374,6 +374,7 @@ static void tab_state_store(char **last_tab_line, int *last_tab_pos,
 struct menu_state {
   int active;
   char **matches;
+  enum completion_type *types;
   size_t count;
   size_t selected;
   char *base_line;
@@ -391,6 +392,8 @@ static void menu_state_reset(struct menu_state *ms) {
     free(ms->matches[i]);
   free(ms->matches);
   ms->matches = NULL;
+  free(ms->types);
+  ms->types = NULL;
   ms->count = 0;
   ms->selected = 0;
   free(ms->base_line);
@@ -500,11 +503,18 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
           strlen(cr->matches[idx]); // flawfinder: ignore // flawfinder: ignore
       if ((ssize_t)idx == selected_idx) {
         write(fd, "\x1b[7m", 4);
-        write(fd, cr->matches[idx], len);
-        write(fd, "\x1b[0m", 4);
       } else {
-        write(fd, cr->matches[idx], len);
+        /* Colors for different types */
+        if (cr->types && cr->types[idx] == COMP_TYPE_DIR) {
+          write(fd, "\x1b[1;34m", 7); /* Bold Blue */
+        } else if (cr->types && (cr->types[idx] == COMP_TYPE_EXE ||
+                                 cr->types[idx] == COMP_TYPE_CMD)) {
+          write(fd, "\x1b[1;32m", 7); /* Bold Green */
+        }
       }
+
+      write(fd, cr->matches[idx], len);
+      write(fd, "\x1b[0m", 4);
 
       if (c + 1 < cols && idx + 1 < cr->count) {
         size_t pad = col_width > len ? col_width - len : 1;
@@ -530,9 +540,12 @@ static void menu_state_start(struct menu_state *ms,
   menu_state_reset(ms);
 
   ms->matches = sh_malloc(cr->count * sizeof(ms->matches[0]));
+  ms->types = sh_malloc(cr->count * sizeof(ms->types[0]));
   ms->count = cr->count;
-  for (i = 0; i < cr->count; i++)
+  for (i = 0; i < cr->count; i++) {
     ms->matches[i] = sh_strdup(cr->matches[i]);
+    ms->types[i] = cr->types[i];
+  }
   ms->selected = 0;
   ms->base_line = sh_strdup(sb->buf ? sb->buf : "");
   ms->base_pos = pos;
@@ -558,6 +571,7 @@ static void menu_apply_and_render(int fd, struct menu_state *menu,
 
   menu_clear_block(fd, menu->rows);
   tmp.matches = menu->matches;
+  tmp.types = menu->types;
   tmp.count = menu->count;
   lineedit_print_matches_columns(fd, &tmp, (ssize_t)menu->selected, &menu->rows,
                                  &menu->cols);
@@ -715,8 +729,6 @@ char *lineedit_read(const char *prompt) {
         const char *buf = sb.buf ? sb.buf : "";
         int start = word_start_at(buf, pos);
         int pfx_len = pos - start;
-        int repeated_tab = (last_tab_line && last_tab_pos == pos &&
-                            strcmp(last_tab_line, buf) == 0);
 
         if (cr && cr->count > 0) {
           if (cr->count == 1) {
@@ -752,25 +764,21 @@ char *lineedit_read(const char *prompt) {
             suppress_suggestion = 0;
             refresh_line(fd_out, display_prompt, &sb, pos,
                          !suppress_suggestion);
-          } else if (repeated_tab) {
+          } else {
+            /* Multiple matches, no common prefix to add -> show menu immediately */
             menu_state_start(&menu, cr, &sb, pos);
-            if (lineedit_apply_completion(&sb, &pos, menu.matches[0], 0)) {
-              suppress_suggestion = 0;
-            }
             /* Enter menu mode and show highlighted matches. */
             write(fd_out, "\n", 1);
             {
               struct completion_result tmp = {0};
               tmp.matches = menu.matches;
+              tmp.types = menu.types;
               tmp.count = menu.count;
-              lineedit_print_matches_columns(fd_out, &tmp, 0, &menu.rows,
+              lineedit_print_matches_columns(fd_out, &tmp, -1, &menu.rows,
                                              &menu.cols);
             }
             refresh_line(fd_out, display_prompt, &sb, pos,
                          !suppress_suggestion);
-          } else {
-            menu_deactivate(fd_out, &menu);
-            write(fd_out, "\a", 1);
           }
           tab_state_store(&last_tab_line, &last_tab_pos, &sb, pos);
         } else {

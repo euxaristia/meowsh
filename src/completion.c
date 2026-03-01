@@ -18,7 +18,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static void add_match(struct completion_result *cr, const char *match) {
+static void add_match(struct completion_result *cr, const char *match,
+                      enum completion_type type) {
   size_t i;
 
   for (i = 0; i < cr->count; i++) {
@@ -27,7 +28,10 @@ static void add_match(struct completion_result *cr, const char *match) {
   }
 
   cr->matches = sh_realloc(cr->matches, (cr->count + 1) * sizeof(char *));
-  cr->matches[cr->count++] = strdup(match);
+  cr->types = sh_realloc(cr->types, (cr->count + 1) * sizeof(enum completion_type));
+  cr->matches[cr->count] = strdup(match);
+  cr->types[cr->count] = type;
+  cr->count++;
 }
 
 void completion_free(struct completion_result *cr) {
@@ -37,6 +41,7 @@ void completion_free(struct completion_result *cr) {
   for (i = 0; i < cr->count; i++)
     free(cr->matches[i]);
   free(cr->matches);
+  free(cr->types);
   free(cr);
 }
 
@@ -56,10 +61,20 @@ static size_t get_common_prefix(char **matches, size_t count) {
   return j;
 }
 
-static int cmp_matches(const void *a, const void *b) {
-  const char *ma = *(const char *const *)a;
-  const char *mb = *(const char *const *)b;
-  return strcmp(ma, mb);
+static void sort_matches(struct completion_result *cr) {
+  size_t i, j;
+  for (i = 0; i < cr->count; i++) {
+    for (j = i + 1; j < cr->count; j++) {
+      if (strcmp(cr->matches[i], cr->matches[j]) > 0) {
+        char *tmp_m = cr->matches[i];
+        enum completion_type tmp_t = cr->types[i];
+        cr->matches[i] = cr->matches[j];
+        cr->types[i] = cr->types[j];
+        cr->matches[j] = tmp_m;
+        cr->types[j] = tmp_t;
+      }
+    }
+  }
 }
 
 static int is_command_pos(const char *line, int pos) {
@@ -192,12 +207,15 @@ static void complete_path(struct completion_result *cr, const char *pfx,
       snprintf(m, len, "%s%s", word_prefix, de->d_name);
 
       if (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) {
-        size_t mlen = strlen(m); // flawfinder: ignore // flawfinder: ignore
+        size_t mlen = strlen(m); // flawfinder: ignore
         m[mlen] = '/';
         m[mlen + 1] = '\0';
-        add_match(cr, m);
+        add_match(cr, m, COMP_TYPE_DIR);
       } else if (!dirs_only) {
-        add_match(cr, m);
+        enum completion_type type = COMP_TYPE_DEFAULT;
+        if (stat(full, &st) == 0 && (st.st_mode & S_IXUSR))
+          type = COMP_TYPE_EXE;
+        add_match(cr, m, type);
       }
       free(m);
     }
@@ -218,11 +236,10 @@ static void complete_exe_in_dir(struct completion_result *cr,
   while ((de = readdir(dir)) != NULL) {
     if (prefix(de->d_name, pfx)) {
       char full[PATH_MAX]; // flawfinder: ignore
+      struct stat st;
       snprintf(full, sizeof(full), "%s/%s", dir_path, de->d_name);
-      int fd = open(full, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-      if (fd >= 0) {
-        close(fd);
-        add_match(cr, de->d_name);
+      if (stat(full, &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+        add_match(cr, de->d_name, COMP_TYPE_CMD);
       }
     }
   }
@@ -234,7 +251,7 @@ static void complete_command(struct completion_result *cr, const char *pfx) {
   const struct builtin_entry *b;
   for (b = builtin_get_all(); b->name; b++) {
     if (prefix(b->name, pfx))
-      add_match(cr, b->name);
+      add_match(cr, b->name, COMP_TYPE_CMD);
   }
 
   /* Aliases */
@@ -243,7 +260,7 @@ static void complete_command(struct completion_result *cr, const char *pfx) {
     const struct alias_entry *ae = sh.aliases[i];
     while (ae) {
       if (prefix(ae->name, pfx))
-        add_match(cr, ae->name);
+        add_match(cr, ae->name, COMP_TYPE_CMD);
       ae = ae->next;
     }
   }
@@ -253,7 +270,7 @@ static void complete_command(struct completion_result *cr, const char *pfx) {
     const struct func_entry *fe = sh.functions[i];
     while (fe) {
       if (prefix(fe->name, pfx))
-        add_match(cr, fe->name);
+        add_match(cr, fe->name, COMP_TYPE_CMD);
       fe = fe->next;
     }
   }
@@ -294,7 +311,7 @@ struct completion_result *completion_get(const char *line, int pos) {
   free(pfx);
 
   if (cr->count > 0) {
-    qsort(cr->matches, cr->count, sizeof(cr->matches[0]), cmp_matches);
+    sort_matches(cr);
     cr->common_len = get_common_prefix(cr->matches, cr->count);
   }
 
