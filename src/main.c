@@ -83,6 +83,31 @@ static void setup_interactive(void) {
   if (isatty(STDIN_FILENO)) {
     sh.terminal_fd = STDIN_FILENO;
     sh.opts |= OPT_MONITOR;
+
+    /* Loop until we are in the foreground.  */
+    while (tcgetpgrp(sh.terminal_fd) != (sh.shell_pgid = getpgrp()))
+      kill(-sh.shell_pgid, SIGTTIN);
+
+    /* Ignore job control signals in the shell */
+    signal(SIGINT, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+
+    /* Put shell in its own process group */
+    sh.shell_pgid = getpid();
+    if (setpgid(sh.shell_pgid, sh.shell_pgid) < 0) {
+      perror("setpgid");
+    }
+    
+    /* Take control of terminal */
+    tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
+
+    /* Final global signal overrides */
+    sh_signal(SIGINT, SIG_IGN);
+    sh_signal(SIGQUIT, SIG_IGN);
+
     jobs_init();
   }
 
@@ -291,7 +316,8 @@ static int starship_disabled_by_env(const char *v) {
 static int ps1_is_default_style(const char *ps1) {
   if (!ps1)
     return 1;
-  return strcmp(ps1, "meowsh % ") == 0 || strcmp(ps1, "🐱") == 0;
+  return strcmp(ps1, "meowsh % ") == 0 || strcmp(ps1, "🐱") == 0 ||
+         strcmp(ps1, "𓃠 ") == 0;
 }
 
 static void maybe_init_starship(void) {
@@ -313,7 +339,7 @@ static void maybe_init_starship(void) {
     return;
 
   sh.starship_enabled = 1;
-  var_set("STARSHIP_SHELL", "bash", 1);
+  var_set("STARSHIP_SHELL", "sh", 1);
 }
 
 static int terminal_width(void) {
@@ -574,9 +600,12 @@ static void main_loop(void) {
     if (!tree) {
       main_debugf("parse_command -> NULL interactive=%d eof=%d", sh.interactive,
                   (sh.input ? sh.input->eof : -1));
-      /* Empty line / interrupted line / EOF. Avoid probing input in interactive
-       * mode because that can trigger extra prompt reads and visual artifacts.
-       */
+      
+      if (sh.parse_error) {
+        sh.parse_error = 0;
+        continue;
+      }
+
       if (sh.input && sh.input->eof) {
         /* If we're on a stacked source (e.g. startup file),
          * pop it and continue reading from the previous source. */
@@ -585,12 +614,6 @@ static void main_loop(void) {
           continue;
         }
         break;
-      }
-      if (!sh.interactive) {
-        int c = input_getc();
-        if (c < 0)
-          break;
-        input_ungetc(c);
       }
       continue;
     }

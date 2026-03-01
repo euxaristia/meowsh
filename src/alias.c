@@ -14,7 +14,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-void alias_init(void) { memset(sh.aliases, 0, sizeof(sh.aliases)); }
+void alias_init(void) {
+  memset(sh.aliases, 0, sizeof(sh.aliases));
+  alias_set("la", "ls -A");
+  alias_set("ll", "ls -l");
+}
 
 static struct alias_entry *alias_lookup(const char *name) {
   unsigned int h = hash_string(name);

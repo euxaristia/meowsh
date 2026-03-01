@@ -142,8 +142,13 @@ static void disable_raw_mode(int fd) {
 static int lineedit_next_char(int fd, char *out) {
 
   if (lineedit_pending_pos >= lineedit_pending_len) {
-    ssize_t n = read(fd, lineedit_pending, sizeof(lineedit_pending)); // flawfinder: ignore
-    if (n <= 0)
+    ssize_t n;
+    while ((n = read(fd, lineedit_pending, sizeof(lineedit_pending))) < 0) { // flawfinder: ignore
+      if (errno == EINTR)
+        continue;
+      return 0;
+    }
+    if (n == 0)
       return 0;
     lineedit_pending_len = (size_t)n;
     lineedit_pending_pos = 0;
