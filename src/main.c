@@ -7,6 +7,7 @@
 
 #include "alias.h"
 #include "compat.h"
+#include "crt.h"
 #include "exec.h"
 #include "expand.h"
 #include "input.h"
@@ -503,13 +504,21 @@ static void main_loop(void) {
       const char *cfg_ps2 = var_get("PS2");
       const char *pwd = var_get("PWD");
       const char *user = var_get("USER");
+      const char *crt = var_get("MEOWSH_CRT");
+      int is_crt = crt && strcmp(crt, "1") == 0;
       char short_pwd[PATH_MAX];
       if (!user)
         user = "meow";
       if (!pwd)
         pwd = "?";
 
-      if (ps1_is_default_style(cfg_ps1) && sh.starship_enabled) {
+      if (is_crt) {
+        shorten_path(short_pwd, pwd, sizeof(short_pwd));
+        snprintf(ps1_buf, sizeof(ps1_buf), "\x1b[32m[SYSTEM READY] %s @ %s >\x1b[0m ",
+                 user, short_pwd);
+        sh.ps1 = ps1_buf;
+        ps2 = "> ";
+      } else if (ps1_is_default_style(cfg_ps1) && sh.starship_enabled) {
         starship_ps1 = build_starship_prompt(sh.last_status);
         if (starship_ps1) {
           char *marked = with_meow_marker(starship_ps1);
@@ -532,7 +541,12 @@ static void main_loop(void) {
       } else {
         sh.ps1 = cfg_ps1;
       }
-      ps2 = cfg_ps2 && *cfg_ps2 ? cfg_ps2 : "🐱";
+
+      if (is_crt) {
+        ps2 = "> ";
+      } else {
+        ps2 = cfg_ps2 && *cfg_ps2 ? cfg_ps2 : "🐱";
+      }
       sh.ps2 = ps2;
       sh.cur_prompt = sh.ps1;
     } else {
@@ -679,6 +693,7 @@ int main(int argc, char **argv) {
   maybe_init_starship();
 
   if (sh.interactive) {
+    crt_boot_sequence();
     fprintf(stderr, "meowsh — welcome! (type 'exit' to quit)\n");
   }
 

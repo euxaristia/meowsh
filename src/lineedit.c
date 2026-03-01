@@ -394,47 +394,65 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
       suggestion = match + sb->len;
   }
 
+  const char *crt = var_get("MEOWSH_CRT");
+  int is_crt = crt && strcmp(crt, "1") == 0;
+
   /* Highlight words: builtins in blue, paths in cyan etc. */
   /* For now: simple quotes and comments */
+  if (is_crt)
+    strbuf_addstr(&colored, "\x1b[32m");
   while (*p) {
     i = (size_t)(p - line);
     if (!in_quote && unknown_idx < unknown_count &&
         i == unknown_start[unknown_idx]) {
       size_t seglen = unknown_len[unknown_idx];
       size_t k;
-      strbuf_addstr(&colored, "\x1b[31m"); /* Red */
+      if (!is_crt)
+        strbuf_addstr(&colored, "\x1b[31m"); /* Red */
       for (k = 0; k < seglen && p[k]; k++)
         strbuf_addch(&colored, p[k]);
-      strbuf_addstr(&colored, "\x1b[0m");
+      if (!is_crt)
+        strbuf_addstr(&colored, "\x1b[0m");
       p += seglen;
       unknown_idx++;
     } else if (!in_quote && (*p == '\'' || *p == '"')) {
       in_quote = 1;
       quote_char = *p;
-      strbuf_addstr(&colored, "\x1b[33m"); /* Yellow */
+      if (!is_crt)
+        strbuf_addstr(&colored, "\x1b[33m"); /* Yellow */
       strbuf_addch(&colored, *p++);
     } else if (in_quote && *p == quote_char) {
       strbuf_addch(&colored, *p++);
-      strbuf_addstr(&colored, "\x1b[0m");
+      if (!is_crt)
+        strbuf_addstr(&colored, "\x1b[0m");
       in_quote = 0;
     } else if (!in_quote && *p == '#') {
-      strbuf_addstr(&colored, "\x1b[32m"); /* Green */
+      if (!is_crt)
+        strbuf_addstr(&colored, "\x1b[32m"); /* Green */
       while (*p)
         strbuf_addch(&colored, *p++);
-      strbuf_addstr(&colored, "\x1b[0m");
+      if (!is_crt)
+        strbuf_addstr(&colored, "\x1b[0m");
     } else {
       strbuf_addch(&colored, *p++);
     }
   }
-  if (in_quote)
+  if (in_quote && !is_crt)
     strbuf_addstr(&colored, "\x1b[0m");
 
-  /* Ghost suggestion in gray */
+  /* Ghost suggestion in gray (or dark green in CRT) */
   if (suggestion && *suggestion) {
-    strbuf_addstr(&colored, "\x1b[90m"); /* Dark gray */
+    if (is_crt)
+      strbuf_addstr(&colored, "\x1b[32m"); /* Just green for now */
+    else
+      strbuf_addstr(&colored, "\x1b[90m"); /* Dark gray */
     strbuf_addstr(&colored, suggestion);
-    strbuf_addstr(&colored, "\x1b[0m");
+    if (!is_crt)
+      strbuf_addstr(&colored, "\x1b[0m");
   }
+
+  if (is_crt)
+    strbuf_addstr(&colored, "\x1b[0m");
   /* Render in one write to reduce cursor jitter/flicker while typing. */
   strbuf_addstr(&out, "\x1b[?25l\r");
   if (prompt)
