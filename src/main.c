@@ -474,7 +474,7 @@ static char *with_meow_marker(const char *prompt) {
 
 static void main_loop(void) {
   struct node *tree;
-  char ps1_buf[PATH_MAX + 64];
+  static char ps1_buf[PATH_MAX + 128];
   const char *ps2;
   char *starship_ps1 = NULL;
 

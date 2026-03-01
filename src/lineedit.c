@@ -438,14 +438,17 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   strbuf_addstr(&out, "\r\x1b[2K"); /* CR and clear line */
   if (prompt)
     strbuf_addstr(&out, prompt);
+
+  /* SAVE CURSOR after prompt */
+  strbuf_addstr(&out, "\x1b[s");
+
   if (colored.buf)
     strbuf_addmem(&out, colored.buf, colored.len);
 
-  /* Position cursor precisely: CR then reprint prompt and move right by cols */
-  strbuf_addstr(&out, "\r");
-  if (prompt)
-    strbuf_addstr(&out, prompt);
+  /* RESTORE CURSOR to end of prompt */
+  strbuf_addstr(&out, "\x1b[u");
 
+  /* Position cursor relative to prompt end */
   if (pos > 0) {
     int i, cols = 0;
     for (i = 0; i < pos && line[i]; i++) {
