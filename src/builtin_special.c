@@ -71,7 +71,6 @@ int builtin_continue(int argc, char **argv) {
 int builtin_dot(int argc, char **argv) {
   const char *filename;
   char fullpath[PATH_MAX]; // flawfinder: ignore
-  struct node *tree;
   int status;
 
   if (argc < 2) {
@@ -128,12 +127,11 @@ found: {
   /* Parse and execute */
   status = 0;
   for (;;) {
-    // cppcheck-suppress variableScope
-    int c;
+    struct node *tree;
     arena_free(&parse_arena);
     tree = parse_command(NULL, NULL);
     if (!tree) {
-      c = input_getc();
+      int c = input_getc();
       if (c < 0)
         break;
       input_ungetc(c);
@@ -160,9 +158,6 @@ found: {
 /* eval [arguments...] */
 int builtin_eval(int argc, char **argv) {
   struct strbuf sb = STRBUF_INIT;
-  // cppcheck-suppress variableScope
-  struct node *tree;
-  // cppcheck-suppress variableScope
   int i, status = 0;
 
   if (argc <= 1)
@@ -178,12 +173,11 @@ int builtin_eval(int argc, char **argv) {
   strbuf_free(&sb);
 
   for (;;) {
-    // cppcheck-suppress variableScope
-    int c;
+    struct node *tree;
     arena_free(&parse_arena);
     tree = parse_command(NULL, NULL);
     if (!tree) {
-      c = input_getc();
+      int c = input_getc();
       if (c < 0)
         break;
       input_ungetc(c);
@@ -456,10 +450,7 @@ int builtin_times(int argc, char **argv) {
 
 /* trap [action signal...] */
 int builtin_trap(int argc, char **argv) {
-  // cppcheck-suppress variableScope
-  int i, sig;
 
-  // cppcheck-suppress variableScope
   if (argc == 1) {
     trap_print();
     return 0;
@@ -475,8 +466,8 @@ int builtin_trap(int argc, char **argv) {
 
   {
     const char *action = argv[1];
-    for (i = 2; i < argc; i++) {
-      sig = trap_signum(argv[i]);
+    for (int i = 2; i < argc; i++) {
+      int sig = trap_signum(argv[i]);
       if (sig < 0) {
         sh_error("trap: %s: bad signal", argv[i]);
         return 1;

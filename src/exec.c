@@ -236,11 +236,9 @@ static int exec_function(struct node *func_body, int argc, char **argv,
   struct saved_fd *saved_redir = NULL;
   int status;
 
-  // cppcheck-suppress knownConditionTrueFalse
-  if (redirs) {
+  {
     saved_redir = redir_apply(redirs);
-    // cppcheck-suppress knownConditionTrueFalse
-    if (!saved_redir && redirs)
+    if (!saved_redir)
       return 1;
   }
 
@@ -257,8 +255,7 @@ static int exec_function(struct node *func_body, int argc, char **argv,
   sh.func_depth--;
   var_pop_posparams();
 
-  if (saved_redir)
-    redir_restore(saved_redir);
+  redir_restore(saved_redir);
 
   return status;
 }
@@ -569,7 +566,8 @@ static int exec_pipeline(struct node *n) {
   return status;
 }
 
-static void exec_subshell(struct node *body, struct redirect *redirs, int flags) {
+static void exec_subshell(struct node *body, struct redirect *redirs,
+                          int flags) {
   pid_t pid;
 
   pid = fork();
@@ -584,10 +582,8 @@ static void exec_subshell(struct node *body, struct redirect *redirs, int flags)
     sh.subshell = 1;
     trap_clear();
 
-    // cppcheck-suppress knownConditionTrueFalse
-    if (redirs) {
-      // cppcheck-suppress knownConditionTrueFalse
-      if (!redir_apply(redirs) && redirs)
+    {
+      if (!redir_apply(redirs))
         _exit(1);
     }
 

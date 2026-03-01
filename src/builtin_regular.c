@@ -268,10 +268,6 @@ int builtin_getopts(int argc, char **argv) {
   int nargs;
   int optind_val;
   const char *optind_str;
-  // cppcheck-suppress variableScope
-  char c;
-  // cppcheck-suppress variableScope
-  const char *p;
 
   if (argc < 3) {
     sh_error("getopts: usage: getopts optstring name [args]");
@@ -326,13 +322,13 @@ int builtin_getopts(int argc, char **argv) {
       return 1;
     }
 
-    c = arg[1];
+    char c = arg[1];
     if (!c) {
       var_set(varname, "?", 0);
       return 1;
     }
 
-    p = strchr(optstring, c);
+    const char *p = strchr(optstring, c);
     if (!p) {
       var_set(varname, "?", 0);
       var_set("OPTARG", "", 0);
@@ -500,8 +496,7 @@ int builtin_kill(int argc, char **argv) {
     return 2;
   }
 
-  // cppcheck-suppress knownConditionTrueFalse
-  if (i < argc && strcmp(argv[i], "-l") == 0) {
+  if (strcmp(argv[i], "-l") == 0) {
     /* List signals */
     int s;
     for (s = 1; s < NSIG; s++) {
@@ -603,8 +598,6 @@ int builtin_read(int argc, char **argv) {
   int raw = 0;
   int i = 1;
   struct strbuf sb = STRBUF_INIT;
-  // cppcheck-suppress variableScope
-  int c;
   const char *ifs;
   // cppcheck-suppress variableScope
   char **vars;
@@ -626,7 +619,7 @@ int builtin_read(int argc, char **argv) {
 
   /* Read one line from stdin */
   for (;;) {
-    c = fgetc(stdin); // flawfinder: ignore
+    int c = fgetc(stdin); // flawfinder: ignore
     if (c == EOF) {
       if (sb.len > 0)
         break;

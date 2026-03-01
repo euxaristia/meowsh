@@ -97,15 +97,14 @@ static size_t lineedit_pending_pos = 0;
 
 static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
 lineedit_debugf(const char *fmt, ...) {
-  // cppcheck-suppress variableScope
-  const char *enabled;
   va_list ap;
 
   if (!lineedit_debug_inited) {
     lineedit_debug_inited = 1;
-    enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
+    const char *enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
     if (enabled && *enabled)
-      lineedit_debug_fp = fopen("/tmp/meowsh-lineedit.log", "a"); // flawfinder: ignore
+      lineedit_debug_fp =
+          fopen("/tmp/meowsh-lineedit.log", "a"); // flawfinder: ignore
   }
   if (!lineedit_debug_fp)
     return;
@@ -141,11 +140,10 @@ static void disable_raw_mode(int fd) {
 }
 
 static int lineedit_next_char(int fd, char *out) {
-  // cppcheck-suppress variableScope
-  ssize_t n;
 
   if (lineedit_pending_pos >= lineedit_pending_len) {
-    n = read(fd, lineedit_pending, sizeof(lineedit_pending)); // flawfinder: ignore
+    ssize_t n = read(fd, lineedit_pending,
+                     sizeof(lineedit_pending)); // flawfinder: ignore
     if (n <= 0)
       return 0;
     lineedit_pending_len = (size_t)n;
@@ -315,7 +313,8 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   /* RESTORE CURSOR to the end of the prompt header */
   strbuf_addstr(&out, "\x1b[u");
 
-  /* Position cursor relative to prompt header using columns of the line buffer */
+  /* Position cursor relative to prompt header using columns of the line buffer
+   */
   {
     int i, cols = 0;
     for (i = 0; i < pos && line[i]; i++) {
@@ -468,7 +467,8 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
     return;
 
   for (i = 0; i < cr->count; i++) {
-    size_t len = strlen(cr->matches[i]); // flawfinder: ignore // flawfinder: ignore
+    size_t len =
+        strlen(cr->matches[i]); // flawfinder: ignore // flawfinder: ignore
     if (len > max_len)
       max_len = len;
   }
@@ -493,16 +493,12 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
     size_t c;
     for (c = 0; c < cols; c++) {
       size_t idx = i * cols + c;
-      // cppcheck-suppress variableScope
-      size_t j;
       size_t len;
-      // cppcheck-suppress variableScope
-      size_t pad;
-      // cppcheck-suppress variableScope
       if (idx >= cr->count)
         break;
 
-      len = strlen(cr->matches[idx]); // flawfinder: ignore // flawfinder: ignore
+      len =
+          strlen(cr->matches[idx]); // flawfinder: ignore // flawfinder: ignore
       if ((ssize_t)idx == selected_idx) {
         write(fd, "\x1b[7m", 4);
         write(fd, cr->matches[idx], len);
@@ -512,8 +508,8 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
       }
 
       if (c + 1 < cols && idx + 1 < cr->count) {
-        pad = col_width > len ? col_width - len : 1;
-        for (j = 0; j < pad; j++)
+        size_t pad = col_width > len ? col_width - len : 1;
+        for (size_t j = 0; j < pad; j++)
           write(fd, " ", 1);
       }
     }
@@ -726,7 +722,8 @@ char *lineedit_read(const char *prompt) {
         if (cr && cr->count > 0) {
           if (cr->count == 1) {
             menu_deactivate(fd_out, &menu);
-            size_t mlen = strlen(cr->matches[0]); // flawfinder: ignore // flawfinder: ignore
+            size_t mlen = strlen(
+                cr->matches[0]); // flawfinder: ignore // flawfinder: ignore
             int append_space = 0;
 
             if (mlen > 0 && cr->matches[0][mlen - 1] != '/') {
@@ -739,7 +736,8 @@ char *lineedit_read(const char *prompt) {
             if (lineedit_apply_completion(&sb, &pos, cr->matches[0],
                                           append_space)) {
               suppress_suggestion = 0;
-              refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+              refresh_line(fd_out, display_prompt, &sb, pos,
+                           !suppress_suggestion);
             }
           } else if (cr->common_len > (size_t)pfx_len) {
             menu_deactivate(fd_out, &menu);
@@ -749,12 +747,14 @@ char *lineedit_read(const char *prompt) {
             if (pos < (int)sb.len) {
               memmove(sb.buf + pos + to_add, sb.buf + pos, sb.len - pos);
             }
-            memcpy(sb.buf + pos, cr->matches[0] + pfx_len, to_add); // flawfinder: ignore
+            memcpy(sb.buf + pos, cr->matches[0] + pfx_len,
+                   to_add); // flawfinder: ignore
             sb.len += to_add;
             sb.buf[sb.len] = '\0';
             pos += (int)to_add;
             suppress_suggestion = 0;
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           } else if (repeated_tab) {
             menu_state_start(&menu, cr, &sb, pos);
             if (lineedit_apply_completion(&sb, &pos, menu.matches[0], 0)) {
@@ -769,7 +769,8 @@ char *lineedit_read(const char *prompt) {
               lineedit_print_matches_columns(fd_out, &tmp, 0, &menu.rows,
                                              &menu.cols);
             }
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           } else {
             menu_deactivate(fd_out, &menu);
             write(fd_out, "\a", 1);
@@ -873,7 +874,8 @@ char *lineedit_read(const char *prompt) {
             strbuf_addstr(&sb, history[history_idx]);
             pos = (int)sb.len;
             suppress_suggestion = 0;
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           }
         } else if (key == LE_KEY_DOWN) { /* Down arrow */
           if (history_idx < history_count) {
@@ -890,17 +892,20 @@ char *lineedit_read(const char *prompt) {
             }
             pos = (int)sb.len;
             suppress_suggestion = 0;
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           }
         } else if (key == LE_KEY_LEFT) { /* Left arrow */
           if (pos > 0) {
             pos--;
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           }
         } else if (key == LE_KEY_RIGHT) { /* Right arrow */
           if (pos < (int)sb.len) {
             pos++;
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           } else {
             /* Accept suggestion if any */
             const char *match = NULL;
@@ -912,7 +917,8 @@ char *lineedit_read(const char *prompt) {
               strbuf_addstr(&sb, match);
               pos = (int)sb.len;
               suppress_suggestion = 0;
-              refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+              refresh_line(fd_out, display_prompt, &sb, pos,
+                           !suppress_suggestion);
             }
           }
         } else if (key == LE_KEY_HOME) { /* Home */
@@ -927,7 +933,8 @@ char *lineedit_read(const char *prompt) {
             sb.len--;
             sb.buf[sb.len] = '\0';
             suppress_suggestion = 1;
-            refresh_line(fd_out, display_prompt, &sb, pos, !suppress_suggestion);
+            refresh_line(fd_out, display_prompt, &sb, pos,
+                         !suppress_suggestion);
           }
         } else if (key == LE_KEY_SHIFT_TAB) { /* Shift-Tab */
           write(fd_out, "\a", 1);
@@ -978,7 +985,8 @@ char *lineedit_read(const char *prompt) {
       last_submitted_line = sh_strdup("");
     }
     lineedit_debugf("return line len=%zu",
-                    res ? strlen(res) : 0); // flawfinder: ignore // flawfinder: ignore
+                    res ? strlen(res)
+                        : 0); // flawfinder: ignore // flawfinder: ignore
     return res;
   }
 }
@@ -1008,7 +1016,7 @@ void history_clear(void) {
 
 void history_load(const char *path) {
   FILE *fp = fopen(path, "r"); // flawfinder: ignore
-  char buf[1024]; // flawfinder: ignore
+  char buf[1024];              // flawfinder: ignore
   if (!fp)
     return;
   while (fgets(buf, sizeof(buf), fp)) {

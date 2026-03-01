@@ -33,13 +33,11 @@ static int main_debug_inited;
 
 static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
 main_debugf(const char *fmt, ...) {
-  // cppcheck-suppress variableScope
-  const char *enabled;
   va_list ap;
 
   if (!main_debug_inited) {
     main_debug_inited = 1;
-    enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
+    const char *enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
     if (enabled && *enabled)
       main_debug_fp =
           fopen("/tmp/meowsh-lineedit.log", "a"); // flawfinder: ignore
@@ -482,8 +480,6 @@ static char *with_meow_marker(const char *prompt) {
 }
 
 static void main_loop(void) {
-  // cppcheck-suppress variableScope
-  struct node *tree;
   static char ps1_buf[PATH_MAX + 128]; // flawfinder: ignore
   const char *ps2;
   char *starship_ps1 = NULL;
@@ -569,7 +565,7 @@ static void main_loop(void) {
       lexer_set_prompts(sh.ps1, sh.ps2);
       input_clear_unget();
     }
-    tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
+    struct node *tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
     if (!tree) {
       main_debugf("parse_command -> NULL interactive=%d eof=%d", sh.interactive,
                   (sh.input ? sh.input->eof : -1));
@@ -604,9 +600,6 @@ static void main_loop(void) {
 
 int main(int argc, char **argv) {
   int optind;
-  // cppcheck-suppress variableScope
-  char **envp;
- // cppcheck-suppress variableScope
 
   setlocale(LC_ALL, "");
 
@@ -618,7 +611,7 @@ int main(int argc, char **argv) {
   /* Import environment */
   {
     extern char **environ;
-    envp = environ;
+    char **envp = environ;
     if (envp) {
       for (; *envp; envp++)
         var_import(*envp);
