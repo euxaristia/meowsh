@@ -300,10 +300,15 @@ static const char *lineedit_find_history_suggestion(const char *line,
 static const char *prompt_last_line(const char *prompt) {
   if (!prompt)
     return NULL;
-  const char *ln = strrchr(prompt, '\n');
-  if (ln)
-    return ln + 1;
-  return prompt;
+  const char *end = prompt + strlen(prompt);
+  while (end > prompt && end[-1] == '\n')
+    end--;
+  const char *last = prompt;
+  for (const char *p = prompt; p < end; p++) {
+    if (*p == '\n')
+      last = p + 1;
+  }
+  return last;
 }
 
 static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
@@ -797,9 +802,10 @@ char *lineedit_read(const char *prompt) {
   }
 
   if (prompt && strchr(prompt, '\n')) {
-    /* Print multiline prompt once; redraw only the last line. */
-    write(fd_out, prompt, strlen(prompt)); // flawfinder: ignore
-    display_prompt = prompt_last_line(prompt);
+    /* Print all but the last line of the prompt once. */
+    const char *last = prompt_last_line(prompt);
+    write(fd_out, prompt, (size_t)(last - prompt));
+    display_prompt = last;
     lineedit_debugf("multiline display_prompt=%s",
                     display_prompt ? display_prompt : "(null)");
   }
