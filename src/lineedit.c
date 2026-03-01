@@ -142,8 +142,7 @@ static void disable_raw_mode(int fd) {
 static int lineedit_next_char(int fd, char *out) {
 
   if (lineedit_pending_pos >= lineedit_pending_len) {
-    ssize_t n = read(fd, lineedit_pending,
-                     sizeof(lineedit_pending)); // flawfinder: ignore
+    ssize_t n = read(fd, lineedit_pending, sizeof(lineedit_pending)); // flawfinder: ignore
     if (n <= 0)
       return 0;
     lineedit_pending_len = (size_t)n;
@@ -722,8 +721,7 @@ char *lineedit_read(const char *prompt) {
         if (cr && cr->count > 0) {
           if (cr->count == 1) {
             menu_deactivate(fd_out, &menu);
-            size_t mlen = strlen(
-                cr->matches[0]); // flawfinder: ignore // flawfinder: ignore
+            size_t mlen = strlen(cr->matches[0]); // flawfinder: ignore
             int append_space = 0;
 
             if (mlen > 0 && cr->matches[0][mlen - 1] != '/') {
@@ -747,8 +745,7 @@ char *lineedit_read(const char *prompt) {
             if (pos < (int)sb.len) {
               memmove(sb.buf + pos + to_add, sb.buf + pos, sb.len - pos);
             }
-            memcpy(sb.buf + pos, cr->matches[0] + pfx_len,
-                   to_add); // flawfinder: ignore
+            memcpy(sb.buf + pos, cr->matches[0] + pfx_len, to_add); // flawfinder: ignore
             sb.len += to_add;
             sb.buf[sb.len] = '\0';
             pos += (int)to_add;
@@ -985,8 +982,7 @@ char *lineedit_read(const char *prompt) {
       last_submitted_line = sh_strdup("");
     }
     lineedit_debugf("return line len=%zu",
-                    res ? strlen(res)
-                        : 0); // flawfinder: ignore // flawfinder: ignore
+                    res ? strlen(res) : 0); // flawfinder: ignore
     return res;
   }
 }

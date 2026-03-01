@@ -368,10 +368,9 @@ static char *build_starship_prompt(int status) {
       close(devnull);
     }
 
-    execlp("starship", "starship", "prompt", "--status", status_arg,
-           "--shlvl", // flawfinder: ignore
-           shlvl_arg, "--terminal-width", width_arg,
-           (char *)NULL); // flawfinder: ignore
+    execlp("starship", "starship", "prompt", "--status", status_arg, // flawfinder: ignore
+           "--shlvl", shlvl_arg, "--terminal-width", width_arg,
+           (char *)NULL);
     _exit(127);
   }
 
@@ -456,25 +455,21 @@ static char *with_meow_marker(const char *prompt) {
       p++;
   }
 
-  marker_len = strlen(marker); // flawfinder: ignore // flawfinder: ignore
+  marker_len = strlen(marker); // flawfinder: ignore
   prefix_len = (size_t)(insert_at - prompt);
   style_prefix_len = (size_t)(style_prefix_end - insert_at);
-  suffix_len = strlen(          // flawfinder: ignore
-      matched ? p : insert_at); // flawfinder: ignore // flawfinder: ignore
+  suffix_len = strlen(matched ? p : insert_at); // flawfinder: ignore
 
   out = sh_malloc(prefix_len + style_prefix_len + marker_len + suffix_len + 1);
   memcpy(out, prompt, prefix_len);                       // flawfinder: ignore
   memcpy(out + prefix_len, insert_at, style_prefix_len); // flawfinder: ignore
-  memcpy(out + prefix_len + style_prefix_len, marker,    // flawfinder: ignore
-         marker_len);                                    // flawfinder: ignore
+  memcpy(out + prefix_len + style_prefix_len, marker, marker_len); // flawfinder: ignore
   if (matched) {
-    memcpy(out + prefix_len + style_prefix_len + marker_len,
-           p,               // flawfinder: ignore
-           suffix_len + 1); // flawfinder: ignore
+    memcpy(out + prefix_len + style_prefix_len + marker_len, p, // flawfinder: ignore
+           suffix_len + 1);
   } else {
-    memcpy(out + prefix_len + style_prefix_len + marker_len,
-           insert_at,       // flawfinder: ignore
-           suffix_len + 1); // flawfinder: ignore
+    memcpy(out + prefix_len + style_prefix_len + marker_len, insert_at, // flawfinder: ignore
+           suffix_len + 1);
   }
   return out;
 }
