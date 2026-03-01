@@ -11,11 +11,11 @@ func NewParser(lexer *Lexer) *Parser {
 }
 
 func (p *Parser) Parse() *ASTNode {
-	node, _ := p.parseCommandList()
+	node, _ := p.parseCommandList(true)
 	return node
 }
 
-func (p *Parser) parseCommandList() (*ASTNode, bool) {
+func (p *Parser) parseCommandList(topLevel bool) (*ASTNode, bool) {
 	var nodes []*ASTNode
 	for {
 		tok := p.lexer.PeekToken()
@@ -23,7 +23,7 @@ func (p *Parser) parseCommandList() (*ASTNode, bool) {
 			break
 		}
 		// Reserved words that end command lists
-		if tok.Value == "done" || tok.Value == "fi" || tok.Value == "esac" || tok.Value == "else" || tok.Value == "elif" {
+		if tok.Value == "done" || tok.Value == "fi" || tok.Value == "esac" || tok.Value == "else" || tok.Value == "elif" || tok.Value == "then" || tok.Value == "do" {
 			break
 		}
 
@@ -33,8 +33,13 @@ func (p *Parser) parseCommandList() (*ASTNode, bool) {
 		}
 
 		tok = p.lexer.PeekToken()
-		if tok.Type == TOK_SEMI || tok.Type == TOK_NEWLINE {
+		if tok.Type == TOK_SEMI {
 			p.lexer.NextToken()
+		} else if tok.Type == TOK_NEWLINE {
+			p.lexer.NextToken()
+			if topLevel {
+				break
+			}
 		} else if tok.Type == TOK_AMP {
 			p.lexer.NextToken()
 			if node != nil {
@@ -72,12 +77,12 @@ func (p *Parser) parseCommand() *ASTNode {
 		return p.parseCase()
 	case "{":
 		p.lexer.NextToken()
-		node, _ := p.parseCommandList()
+		node, _ := p.parseCommandList(false)
 		p.expect(TOK_RBRACE, "}")
 		return &ASTNode{Type: "brace_group", Body: node}
 	case "(":
 		p.lexer.NextToken()
-		node, _ := p.parseCommandList()
+		node, _ := p.parseCommandList(false)
 		p.expect(TOK_RPAREN, ")")
 		return &ASTNode{Type: "subshell", Body: node}
 	}
@@ -161,15 +166,15 @@ func (p *Parser) parseSimpleCommand() *ASTNode {
 
 func (p *Parser) parseIf() *ASTNode {
 	p.lexer.NextToken() // if
-	cond, _ := p.parseCommandList()
+	cond, _ := p.parseCommandList(false)
 	p.expectValue("then")
-	body, _ := p.parseCommandList()
+	body, _ := p.parseCommandList(false)
 
 	var elseNode *ASTNode
 	tok := p.lexer.PeekToken()
 	if tok.Value == "else" {
 		p.lexer.NextToken()
-		elseNode, _ = p.parseCommandList()
+		elseNode, _ = p.parseCommandList(false)
 	} else if tok.Value == "elif" {
 		elseNode = p.parseIf()
 	}
@@ -181,9 +186,9 @@ func (p *Parser) parseIf() *ASTNode {
 func (p *Parser) parseWhile() *ASTNode {
 	tok := p.lexer.NextToken()
 	keyword := tok.Value
-	cond, _ := p.parseCommandList()
+	cond, _ := p.parseCommandList(false)
 	p.expectValue("do")
-	body, _ := p.parseCommandList()
+	body, _ := p.parseCommandList(false)
 	p.expectValue("done")
 	return &ASTNode{Type: keyword, Cond: cond, Body: body}
 }
@@ -207,7 +212,7 @@ func (p *Parser) parseFor() *ASTNode {
 	}
 
 	p.expectValue("do")
-	body, _ := p.parseCommandList()
+	body, _ := p.parseCommandList(false)
 	p.expectValue("done")
 	return &ASTNode{Type: "for", LoopVar: varName, LoopWords: words, Body: body}
 }
@@ -240,7 +245,7 @@ func (p *Parser) parseCase() *ASTNode {
 		pattern := p.lexer.NextToken().Value
 		p.expectValue(")")
 
-		body, _ := p.parseCommandList()
+		body, _ := p.parseCommandList(false)
 		node.Cases = append(node.Cases, CaseItem{Pattern: pattern, Body: body})
 
 		tok = p.lexer.PeekToken()

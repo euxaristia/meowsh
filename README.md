@@ -32,5 +32,4 @@ To disable automatic Starship initialization, set `MEOWSH_STARSHIP=0` before sta
 
 ## Development
 
-- `src/`: Source code
-- `tests/`: Test suite
+The source code is written in Go and located in the `src/` directory.

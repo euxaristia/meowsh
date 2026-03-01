@@ -98,78 +98,81 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 			continue
 		}
 
-		b := buf[0]
+		for i := 0; i < n; i++ {
+			b := buf[i]
 
-		switch b {
-		case 3: // Ctrl-C
-			fmt.Print("^C\r\n")
-			return "", nil
-		case 4: // Ctrl-D
-			if len(le.line) == 0 {
-				fmt.Print("\r\n")
-				return "", io.EOF
-			}
-			// Delete at cursor
-			if le.pos < len(le.line) {
-				le.line = append(le.line[:le.pos], le.line[le.pos+1:]...)
-				le.refreshLine()
-			}
-		case 13, 10: // Enter
-			fmt.Print("\r\n")
-			return string(le.line), nil
-		case 127, 8: // Backspace
-			if le.pos > 0 {
-				le.line = append(le.line[:le.pos-1], le.line[le.pos:]...)
-				le.pos--
-				le.refreshLine()
-			}
-		case 9: // Tab
-			le.handleTab()
-			le.refreshLine()
-		case 27: // Escape sequence
-			if n >= 3 && buf[1] == '[' {
-				switch buf[2] {
-				case 'A': // Up
-					// History up (todo)
-				case 'B': // Down
-					// History down (todo)
-				case 'C': // Right
-					if le.pos < len(le.line) {
-						le.pos++
-						fmt.Print("\x1b[1C")
-					}
-				case 'D': // Left
-					if le.pos > 0 {
-						le.pos--
-						fmt.Print("\x1b[1D")
-					}
-				case 'H': // Home
-					if le.pos > 0 {
-						fmt.Printf("\r\x1b[%dC", le.promptWidth())
-						le.pos = 0
-					}
-				case 'F': // End
-					if le.pos < len(le.line) {
-						fmt.Printf("\x1b[%dC", len(le.line)-le.pos)
-						le.pos = len(le.line)
-					}
+			switch b {
+			case 3: // Ctrl-C
+				fmt.Print("^C\r\n")
+				return "", nil
+			case 4: // Ctrl-D
+				if len(le.line) == 0 {
+					fmt.Print("\r\n")
+					return "", io.EOF
 				}
-			}
-		default:
-			if b >= 32 {
-				char := []rune(string(buf[:n]))[0]
-				if le.pos == len(le.line) {
-					le.line = append(le.line, char)
-					fmt.Print(string(char))
-				} else {
-					newP := make([]rune, len(le.line)+1)
-					copy(newP, le.line[:le.pos])
-					newP[le.pos] = char
-					copy(newP[le.pos+1:], le.line[le.pos:])
-					le.line = newP
+				// Delete at cursor
+				if le.pos < len(le.line) {
+					le.line = append(le.line[:le.pos], le.line[le.pos+1:]...)
 					le.refreshLine()
 				}
-				le.pos++
+			case 13, 10: // Enter
+				fmt.Print("\r\n")
+				return string(le.line), nil
+			case 127, 8: // Backspace
+				if le.pos > 0 {
+					le.line = append(le.line[:le.pos-1], le.line[le.pos:]...)
+					le.pos--
+					le.refreshLine()
+				}
+			case 9: // Tab
+				le.handleTab()
+				le.refreshLine()
+			case 27: // Escape sequence
+				if i+2 < n && buf[i+1] == '[' {
+					switch buf[i+2] {
+					case 'A': // Up
+						// History up (todo)
+					case 'B': // Down
+						// History down (todo)
+					case 'C': // Right
+						if le.pos < len(le.line) {
+							le.pos++
+							fmt.Print("\x1b[1C")
+						}
+					case 'D': // Left
+						if le.pos > 0 {
+							le.pos--
+							fmt.Print("\x1b[1D")
+						}
+					case 'H': // Home
+						if le.pos > 0 {
+							fmt.Printf("\r\x1b[%dC", le.promptWidth())
+							le.pos = 0
+						}
+					case 'F': // End
+						if le.pos < len(le.line) {
+							fmt.Printf("\x1b[%dC", len(le.line)-le.pos)
+							le.pos = len(le.line)
+						}
+					}
+					i += 2
+				}
+			default:
+				if b >= 32 {
+					char := rune(b)
+					if le.pos == len(le.line) {
+						le.line = append(le.line, char)
+						fmt.Print(string(char))
+					} else {
+						newP := make([]rune, len(le.line)+1)
+						copy(newP, le.line[:le.pos])
+						newP[le.pos] = char
+						copy(newP[le.pos+1:], le.line[le.pos:])
+						le.line = newP
+						le.refreshLine()
+					}
+					le.pos++
+				}
 			}
 		}
 	}

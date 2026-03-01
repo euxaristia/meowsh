@@ -1,6 +1,4 @@
 meowsh
-meowsh_go
-*.o
 *.test
 test_multiline.txt
 test_redir.txt
