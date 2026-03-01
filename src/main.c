@@ -514,7 +514,7 @@ static void main_loop(void) {
 
       if (is_crt) {
         shorten_path(short_pwd, pwd, sizeof(short_pwd));
-        snprintf(ps1_buf, sizeof(ps1_buf), "\x1b[32m[%s @ %s] 𓃠  \x1b[0m ", user,
+        snprintf(ps1_buf, sizeof(ps1_buf), "\x1b[32m[%s @ %s] 𓃠  \x1b[0m", user,
                  short_pwd);
         sh.ps1 = ps1_buf;
         ps2 = "𓃠  ";
@@ -528,7 +528,8 @@ static void main_loop(void) {
         } else {
           shorten_path(short_pwd, pwd, sizeof(short_pwd));
           snprintf(ps1_buf, sizeof(ps1_buf),
-                   "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 𓃠  ", user, short_pwd);
+                   "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 𓃠  \x1b[0m", user,
+                   short_pwd);
           sh.ps1 = ps1_buf;
         }
       } else if (ps1_is_default_style(cfg_ps1)) {
@@ -536,14 +537,15 @@ static void main_loop(void) {
 
         /* Fish-style prompt: [user] /s/p/path $ */
         snprintf(ps1_buf, sizeof(ps1_buf),
-                 "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 𓃠  ", user, short_pwd);
+                 "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 𓃠  \x1b[0m", user,
+                 short_pwd);
         sh.ps1 = ps1_buf;
       } else {
         sh.ps1 = cfg_ps1;
       }
 
       if (is_crt) {
-        ps2 = "𓃠  ";
+        ps2 = "𓃠 ";
       } else {
         ps2 = cfg_ps2 && *cfg_ps2 ? cfg_ps2 : "𓃠 ";
       }
