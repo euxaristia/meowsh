@@ -21,11 +21,14 @@ type LineEditor struct {
 	rawMode     bool
 	reader      *bufio.Reader
 
+	// Completion state
 	lastMatches []string
 	matchIdx    int
 	matchDir    string
-	lastTabPos  int
+	baseLine    []rune
+	basePos     int
 	prefixLen   int
+	menuRows    int
 }
 
 func NewLineEditor() *LineEditor {
@@ -43,9 +46,7 @@ func (le *LineEditor) enableRawMode() error {
 	}
 
 	raw := le.origTermios
-	// Disable echo, canonical mode, signals, and extended processing
 	raw.Lflag &^= syscall.ECHO | syscall.ICANON | syscall.ISIG | syscall.IEXTEN
-	// Disable break, CR to NL, parity, and flow control
 	raw.Iflag &^= syscall.BRKINT | syscall.ICRNL | syscall.INPCK | syscall.ISTRIP | syscall.IXON
 	raw.Cflag |= syscall.CS8
 	raw.Cc[syscall.VMIN] = 1
@@ -65,16 +66,89 @@ func (le *LineEditor) disableRawMode() {
 	}
 }
 
+func (le *LineEditor) getTermWidth() int {
+	var ws struct {
+		Row    uint16
+		Col    uint16
+		Xpixel uint16
+		Ypixel uint16
+	}
+	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
+	if err != 0 {
+		return 80
+	}
+	return int(ws.Col)
+}
+
 func (le *LineEditor) refreshLine() {
-	// Move to start of line (\r), clear to end of screen (\x1b[J)
+	// Clear from cursor down to remove old menu if any
 	fmt.Print("\r\x1b[J")
 	fmt.Print(le.prompt)
 	fmt.Print(string(le.line))
 	
-	// Move cursor back to the correct position
 	if le.pos < len(le.line) {
 		moveBack := len(le.line) - le.pos
 		fmt.Printf("\x1b[%dD", moveBack)
+	}
+
+	if len(le.lastMatches) > 0 {
+		le.renderMenu()
+	}
+}
+
+func (le *LineEditor) renderMenu() {
+	fmt.Print("\x1b[s") // Save cursor
+	fmt.Print("\n")
+	
+	width := le.getTermWidth()
+	maxLen := 0
+	for _, m := range le.lastMatches {
+		if len(m) > maxLen {
+			maxLen = len(m)
+		}
+	}
+	colWidth := maxLen + 2
+	cols := width / colWidth
+	if cols == 0 {
+		cols = 1
+	}
+	
+	le.menuRows = (len(le.lastMatches) + cols - 1) / cols
+
+	for r := 0; r < le.menuRows; r++ {
+		for c := 0; c < cols; c++ {
+			idx := r + c*le.menuRows
+			if idx < len(le.lastMatches) {
+				m := le.lastMatches[idx]
+				if idx == le.matchIdx {
+					fmt.Printf("\x1b[7m%s\x1b[0m", m) // Highlight
+				} else {
+					// Add color based on type if we had it, for now just print
+					fullPath := filepath.Join(le.matchDir, m)
+					if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+						fmt.Printf("\033[34m%s\033[0m", m)
+					} else {
+						fmt.Print(m)
+					}
+				}
+				if c < cols-1 {
+					fmt.Print(strings.Repeat(" ", colWidth-len(m)))
+				}
+			}
+		}
+		if r < le.menuRows-1 {
+			fmt.Print("\n")
+		}
+	}
+	
+	fmt.Print("\x1b[u") // Restore cursor
+}
+
+func (le *LineEditor) clearMenu() {
+	if le.menuRows > 0 {
+		// Moving down and clearing is hard with \x1b[J if we are at the bottom of the screen.
+		// refreshLine already clears from cursor down.
+		le.menuRows = 0
 	}
 }
 
@@ -110,12 +184,17 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 		for i := 0; i < n; i++ {
 			b := buf[i]
 
-			if b != 9 {
+			// Completion keys: Tab, Esc, Arrows
+			isTab := b == 9
+			isEsc := b == 27
+			
+			if !isTab && !isEsc {
 				le.resetCompletion()
 			}
 
 			switch b {
 			case 3: // Ctrl-C
+				le.clearMenu()
 				fmt.Print("^C\r\n")
 				return "", nil
 			case 4: // Ctrl-D
@@ -123,12 +202,12 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 					fmt.Print("\r\n")
 					return "", io.EOF
 				}
-				// Delete at cursor
 				if le.pos < len(le.line) {
 					le.line = append(le.line[:le.pos], le.line[le.pos+1:]...)
 					le.refreshLine()
 				}
 			case 13, 10: // Enter
+				le.clearMenu()
 				fmt.Print("\r\n")
 				return string(le.line), nil
 			case 127, 8: // Backspace
@@ -142,11 +221,39 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 				le.refreshLine()
 			case 27: // Escape sequence
 				if i+2 < n && buf[i+1] == '[' {
-					switch buf[i+2] {
+					key := buf[i+2]
+					if len(le.lastMatches) > 0 {
+						switch key {
+						case 'A': // Up
+							le.moveMenu(-1, 0)
+							le.applyMatch()
+							le.refreshLine()
+							i += 2
+							continue
+						case 'B': // Down
+							le.moveMenu(1, 0)
+							le.applyMatch()
+							le.refreshLine()
+							i += 2
+							continue
+						case 'C': // Right
+							le.moveMenu(0, 1)
+							le.applyMatch()
+							le.refreshLine()
+							i += 2
+							continue
+						case 'D': // Left
+							le.moveMenu(0, -1)
+							le.applyMatch()
+							le.refreshLine()
+							i += 2
+							continue
+						}
+					}
+					// Normal arrow handling
+					switch key {
 					case 'A': // Up
-						// History up (todo)
 					case 'B': // Down
-						// History down (todo)
 					case 'C': // Right
 						if le.pos < len(le.line) {
 							le.pos++
@@ -169,6 +276,9 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 						}
 					}
 					i += 2
+				} else {
+					le.resetCompletion()
+					le.refreshLine()
 				}
 			default:
 				if b >= 32 {
@@ -194,11 +304,78 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 func (le *LineEditor) resetCompletion() {
 	le.lastMatches = nil
 	le.matchIdx = -1
-	le.lastTabPos = -1
+	le.baseLine = nil
+	le.menuRows = 0
+}
+
+func (le *LineEditor) moveMenu(dRow, dCol int) {
+	if len(le.lastMatches) == 0 {
+		return
+	}
+	
+	width := le.getTermWidth()
+	maxLen := 0
+	for _, m := range le.lastMatches {
+		if len(m) > maxLen {
+			maxLen = len(m)
+		}
+	}
+	colWidth := maxLen + 2
+	cols := width / colWidth
+	if cols == 0 {
+		cols = 1
+	}
+	rows := (len(le.lastMatches) + cols - 1) / cols
+
+	if le.matchIdx == -1 {
+		le.matchIdx = 0
+		return
+	}
+
+	r := le.matchIdx % rows
+	c := le.matchIdx / rows
+
+	if dRow != 0 {
+		r = (r + dRow + rows) % rows
+	}
+	if dCol != 0 {
+		c = (c + dCol + cols) % cols
+	}
+
+	newIdx := r + c*rows
+	if newIdx >= len(le.lastMatches) {
+		if dCol > 0 {
+			newIdx = r // Wrap to first col
+		} else if dCol < 0 {
+			newIdx = r + (cols-2)*rows // Previous col might still be too far
+			for newIdx >= len(le.lastMatches) {
+				newIdx -= rows
+			}
+		} else {
+			newIdx = 0 // Fallback
+		}
+	}
+	le.matchIdx = newIdx
+}
+
+func (le *LineEditor) applyMatch() {
+	if le.matchIdx == -1 {
+		return
+	}
+	m := le.lastMatches[le.matchIdx]
+	fullPath := filepath.Join(le.matchDir, m)
+	suffix := " "
+	if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+		suffix = "/"
+	}
+	
+	le.line = make([]rune, len(le.baseLine))
+	copy(le.line, le.baseLine)
+	le.pos = le.basePos
+	le.insertAtCursor(m[le.prefixLen:] + suffix)
 }
 
 func (le *LineEditor) promptWidth() int {
-	// Crude estimate: strip ANSI codes
 	w := 0
 	inEsc := false
 	for _, r := range le.prompt {
@@ -212,7 +389,6 @@ func (le *LineEditor) promptWidth() int {
 			}
 			continue
 		}
-		// Emoji/Hieroglyph width handling
 		if r > 0xFFFF {
 			w += 2
 		} else {
@@ -231,27 +407,9 @@ func (le *LineEditor) readLineCooked() (string, error) {
 }
 
 func (le *LineEditor) handleTab() {
-	if len(le.lastMatches) > 0 && le.lastTabPos == le.pos {
-		// Cycle
-		currentMatch := le.lastMatches[le.matchIdx]
-		fullPath := filepath.Join(le.matchDir, currentMatch)
-		suffix := " "
-		if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
-			suffix = "/"
-		}
-		toDelete := len([]rune(currentMatch[le.prefixLen:] + suffix))
-		le.line = append(le.line[:le.pos-toDelete], le.line[le.pos:]...)
-		le.pos -= toDelete
-
-		le.matchIdx = (le.matchIdx + 1) % len(le.lastMatches)
-		nextMatch := le.lastMatches[le.matchIdx]
-		fullPath = filepath.Join(le.matchDir, nextMatch)
-		suffix = " "
-		if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
-			suffix = "/"
-		}
-		le.insertAtCursor(nextMatch[le.prefixLen:] + suffix)
-		le.lastTabPos = le.pos
+	if len(le.lastMatches) > 0 {
+		le.moveMenu(0, 1)
+		le.applyMatch()
 		return
 	}
 
@@ -305,22 +463,19 @@ func (le *LineEditor) handleTab() {
 		if len(cp) > len(prefix) {
 			le.insertAtCursor(cp[len(prefix):])
 		} else {
-			// Start cycling
+			// Start menu
 			le.lastMatches = matches
-			le.matchIdx = 0
+			le.matchIdx = -1 // No selection yet, but will be 0 on next move
 			le.matchDir = dir
 			le.prefixLen = len(prefix)
-
-			nextMatch := matches[0]
-			fullPath := filepath.Join(dir, nextMatch)
-			suffix := " "
-			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
-				suffix = "/"
-			}
-			le.insertAtCursor(nextMatch[len(prefix):] + suffix)
+			le.baseLine = make([]rune, len(le.line))
+			copy(le.baseLine, le.line)
+			le.basePos = le.pos
+			
+			le.moveMenu(0, 1)
+			le.applyMatch()
 		}
 	}
-	le.lastTabPos = le.pos
 }
 
 func (le *LineEditor) insertAtCursor(s string) {
