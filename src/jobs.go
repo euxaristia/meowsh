@@ -116,16 +116,17 @@ func jobWaitFg(j *Job) int {
 func jobsCleanup() {
 	newJobs := []*Job{}
 	for _, j := range sh.Jobs {
-		if j.State != JOB_DONE {
-			newJobs = append(newJobs, j)
+		if j.State == JOB_DONE && (j.Foreground || j.Notified) {
+			continue
 		}
+		newJobs = append(newJobs, j)
 	}
 	sh.Jobs = newJobs
 }
 
 func jobsNotify() {
 	for _, j := range sh.Jobs {
-		if j.State == JOB_DONE && !j.Notified {
+		if j.State == JOB_DONE && !j.Notified && !j.Foreground {
 			fmt.Printf("[%d]+  Done\t\t%s\n", j.Id, j.CmdText)
 			j.Notified = true
 		}

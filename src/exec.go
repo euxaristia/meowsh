@@ -398,11 +398,12 @@ func execCommand(args []string, foreground bool) int {
 
 	pgid, _ := syscall.Getpgid(cmd.Process.Pid)
 	job := &Job{
-		Id:      sh.NextJobId,
-		Pgid:    pgid,
-		Procs:   []*Process{{Pid: cmd.Process.Pid, Cmd: strings.Join(args, " "), State: PROC_RUNNING}},
-		State:   JOB_RUNNING,
-		CmdText: strings.Join(args, " "),
+		Id:         sh.NextJobId,
+		Pgid:       pgid,
+		Procs:      []*Process{{Pid: cmd.Process.Pid, Cmd: strings.Join(args, " "), State: PROC_RUNNING}},
+		State:      JOB_RUNNING,
+		Foreground: foreground,
+		CmdText:    strings.Join(args, " "),
 	}
 	sh.NextJobId++
 	sh.Jobs = append(sh.Jobs, job)
