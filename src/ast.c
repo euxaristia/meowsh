@@ -55,7 +55,7 @@ ast_and_or(struct node *left, struct node *right, connector_t conn)
 }
 
 struct node *
-ast_list(struct node **items, connector_t *conns, int nitems)
+ast_list(struct node **items, const connector_t *conns, int nitems)
 {
 	struct node *n = ast_node(NODE_LIST);
 	struct node **iarr;

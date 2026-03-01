@@ -162,6 +162,7 @@ int builtin_eval(int argc, char **argv) {
   struct strbuf sb = STRBUF_INIT;
   // cppcheck-suppress variableScope
   struct node *tree;
+  // cppcheck-suppress variableScope
   int i, status = 0;
 
   if (argc <= 1)
@@ -458,6 +459,7 @@ int builtin_trap(int argc, char **argv) {
   // cppcheck-suppress variableScope
   int i, sig;
 
+  // cppcheck-suppress variableScope
   if (argc == 1) {
     trap_print();
     return 0;

@@ -97,6 +97,7 @@ static size_t lineedit_pending_pos = 0;
 
 static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
 lineedit_debugf(const char *fmt, ...) {
+  // cppcheck-suppress variableScope
   const char *enabled;
   va_list ap;
 
@@ -492,9 +493,12 @@ static void lineedit_print_matches_columns(int fd, struct completion_result *cr,
     size_t c;
     for (c = 0; c < cols; c++) {
       size_t idx = i * cols + c;
+      // cppcheck-suppress variableScope
       size_t j;
       size_t len;
+      // cppcheck-suppress variableScope
       size_t pad;
+      // cppcheck-suppress variableScope
       if (idx >= cr->count)
         break;
 

@@ -740,7 +740,7 @@ static struct token *classify_word(struct token *tok) {
 
 /* Try alias expansion on a word token.
  * Returns 1 if alias was expanded (token replaced). */
-static int try_alias(struct token *tok) {
+static int try_alias(const struct token *tok) {
   const char *val;
 
   if (!alias_enabled)

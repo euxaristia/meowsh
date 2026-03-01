@@ -268,6 +268,7 @@ int builtin_getopts(int argc, char **argv) {
   int nargs;
   int optind_val;
   const char *optind_str;
+  // cppcheck-suppress variableScope
   char c;
   // cppcheck-suppress variableScope
   const char *p;
@@ -605,6 +606,7 @@ int builtin_read(int argc, char **argv) {
   // cppcheck-suppress variableScope
   int c;
   const char *ifs;
+  // cppcheck-suppress variableScope
   char **vars;
   int nvars;
 

@@ -41,7 +41,7 @@ static struct node *p_simple_command(void);
 static struct node *p_compound_command(void);
 static struct redirect *p_redirect(void);
 static struct redirect *p_redirect_list(void);
-static struct word *p_word_token(struct token *tok);
+static struct word *p_word_token(const struct token *tok);
 static void token_desc(const struct token *tok, char *buf, size_t size);
 
 static void
@@ -162,7 +162,7 @@ token_desc(const struct token *tok, char *buf, size_t size)
 }
 
 static struct word *
-p_word_token(struct token *tok)
+p_word_token(const struct token *tok)
 {
 	struct word *w = ast_word();
 	struct wordpart *p = ast_wordpart(WPART_LITERAL, tok->value);

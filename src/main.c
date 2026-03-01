@@ -33,6 +33,7 @@ static int main_debug_inited;
 
 static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
 main_debugf(const char *fmt, ...) {
+  // cppcheck-suppress variableScope
   const char *enabled;
   va_list ap;
 
@@ -605,6 +606,7 @@ int main(int argc, char **argv) {
   int optind;
   // cppcheck-suppress variableScope
   char **envp;
+ // cppcheck-suppress variableScope
 
   setlocale(LC_ALL, "");
 

@@ -239,6 +239,7 @@ static int exec_function(struct node *func_body, int argc, char **argv,
   // cppcheck-suppress knownConditionTrueFalse
   if (redirs) {
     saved_redir = redir_apply(redirs);
+    // cppcheck-suppress knownConditionTrueFalse
     if (!saved_redir && redirs)
       return 1;
   }
@@ -585,6 +586,7 @@ static void exec_subshell(struct node *body, struct redirect *redirs, int flags)
 
     // cppcheck-suppress knownConditionTrueFalse
     if (redirs) {
+      // cppcheck-suppress knownConditionTrueFalse
       if (!redir_apply(redirs) && redirs)
         _exit(1);
     }
@@ -886,7 +888,7 @@ int exec_node(struct node *n, int flags) {
 
     for (item = n->data.case_cmd.items; item;
          item = item->data.case_item.next_item) {
-      struct word *pat;
+      const struct word *pat;
       int matched = 0;
 
       for (pat = item->data.case_item.patterns; pat; pat = pat->next) {

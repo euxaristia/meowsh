@@ -12,7 +12,7 @@
 struct node *ast_simple_cmd(void);
 struct node *ast_pipeline(struct node **cmds, int ncmds, int bang);
 struct node *ast_and_or(struct node *left, struct node *right, connector_t conn);
-struct node *ast_list(struct node **items, connector_t *conns, int nitems);
+struct node *ast_list(struct node **items, const connector_t *conns, int nitems);
 struct node *ast_subshell(struct node *body, struct redirect *redirs);
 struct node *ast_brace_group(struct node *body, struct redirect *redirs);
 struct node *ast_if(struct node *cond, struct node *then_body,

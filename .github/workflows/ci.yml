@@ -26,15 +26,9 @@ jobs:
     - name: Run cppcheck
       run: |
         cppcheck --enable=all --check-level=exhaustive \
+          --inline-suppr \
           --suppress=missingIncludeSystem \
-          --suppress=unusedFunction \
-          --suppress=constVariable \
-          --suppress=constVariablePointer \
-          --suppress=constParameterPointer \
-          --suppress=variableScope \
-          --suppress=knownConditionTrueFalse \
-          --suppress=unusedStructMember \
-          --suppress=staticFunction \
+          --suppress=unmatchedSuppression \
           --error-exitcode=1 src/
 
     - name: Build
