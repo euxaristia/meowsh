@@ -110,17 +110,10 @@ static int input_refill(struct input_source *is) {
   switch (is->type) {
   case INPUT_FD:
     if (sh.interactive && is->u.fd == STDIN_FILENO) {
-      char *prompt = NULL;
       const char *rendered_prompt = sh.cur_prompt;
       char *line;
 
-      if (rendered_prompt) {
-        prompt = expand_heredoc(rendered_prompt);
-        rendered_prompt = prompt;
-      }
-
       line = lineedit_read(rendered_prompt);
-      free(prompt);
       if (!line) {
         is->eof = 1;
         return -1;
