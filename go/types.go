@@ -35,12 +35,37 @@ type Var struct {
 }
 
 type Job struct {
-	Id     int
-	Pid    int
-	Cmd    string
-	Done   bool
-	Status int
+	Id         int
+	Pgid       int
+	Procs      []*Process
+	State      JobState
+	Notified   bool
+	Foreground bool
+	CmdText    string
 }
+
+type Process struct {
+	Pid    int
+	Status int
+	State  ProcState
+	Cmd    string
+}
+
+type JobState int
+
+const (
+	JOB_RUNNING JobState = iota
+	JOB_STOPPED
+	JOB_DONE
+)
+
+type ProcState int
+
+const (
+	PROC_RUNNING ProcState = iota
+	PROC_STOPPED
+	PROC_DONE
+)
 
 type FuncDef struct {
 	Body string

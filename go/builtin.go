@@ -487,21 +487,6 @@ func builtinTest(args []string) int {
 	return 1
 }
 
-func builtinJobs(args []string) int {
-	for _, job := range sh.Jobs {
-		fmt.Printf("[%d] %d %s\n", job.Id, job.Pid, job.Cmd)
-	}
-	return 0
-}
-
-func builtinFg(args []string) int {
-	return 0
-}
-
-func builtinBg(args []string) int {
-	return 0
-}
-
 func builtinKill(args []string) int {
 	if len(args) < 1 {
 		fmt.Println("kill: usage: kill pid")

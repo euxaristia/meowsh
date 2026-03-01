@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 )
 
 func execNode(node *ASTNode) int {
@@ -81,7 +82,8 @@ func execSimple(node *ASTNode) int {
 	saved := handleRedirections(node.Redirs)
 	defer restoreFDs(saved)
 
-	status := execCommand(expandedArgs)
+	foreground := node.Conn != "&"
+	status := execCommand(expandedArgs, foreground)
 	sh.LastStatus = status
 	return status
 }
@@ -298,14 +300,16 @@ func execFunction(node *ASTNode) int {
 	return 0
 }
 
-func execCommand(args []string) int {
+func execCommand(args []string, foreground bool) int {
 	if len(args) == 0 {
 		return 0
 	}
 
 	name := args[0]
 
-	if name == "exit" {
+	// Handle built-ins first
+	switch name {
+	case "exit":
 		code := 0
 		if len(args) > 1 {
 			fmt.Sscanf(args[1], "%d", &code)
@@ -313,18 +317,12 @@ func execCommand(args []string) int {
 		fmt.Println("logout")
 		os.Exit(code)
 		return 0
-	}
-
-	if name == "cd" {
+	case "cd":
 		return builtinCd(args[1:])
-	}
-
-	if name == "pwd" {
+	case "pwd":
 		fmt.Println(varGet("PWD"))
 		return 0
-	}
-
-	if name == "echo" {
+	case "echo":
 		for i, arg := range args[1:] {
 			fmt.Print(expandAll(arg))
 			if i < len(args)-2 {
@@ -333,206 +331,78 @@ func execCommand(args []string) int {
 		}
 		fmt.Println()
 		return 0
-	}
-
-	if name == "printf" {
-		if len(args) > 1 {
-			format := args[1]
-			if len(args) == 2 {
-				fmt.Print(format)
-			} else {
-				values := make([]any, len(args)-2)
-				for i, v := range args[2:] {
-					values[i] = v
-				}
-				fmt.Printf(format, values...)
-			}
-		}
+	case "true":
 		return 0
-	}
-
-	if name == "true" {
-		return 0
-	}
-
-	if name == "false" {
+	case "false":
 		return 1
-	}
-
-	if name == "test" || name == "[" {
+	case "test", "[":
 		return builtinTest(args[1:])
-	}
-
-	if name == "set" {
-		return builtinSet(args[1:])
-	}
-
-	if name == "export" {
-		return builtinExport(args[1:])
-	}
-
-	if name == "unset" {
-		return builtinUnset(args[1:])
-	}
-
-	if name == "alias" {
-		return builtinAlias(args[1:])
-	}
-
-	if name == "unalias" {
-		return builtinUnalias(args[1:])
-	}
-
-	if name == "read" {
-		return builtinRead(args[1:])
-	}
-
-	if name == "shift" {
-		return builtinShift(args[1:])
-	}
-
-	if name == "local" {
-		return builtinLocal(args[1:])
-	}
-
-	if name == "readonly" {
-		return builtinReadonly(args[1:])
-	}
-
-	if name == "return" {
-		return sh.LastStatus
-	}
-
-	if name == "break" {
-		return 2
-	}
-
-	if name == "continue" {
-		return 3
-	}
-
-	if name == "eval" {
-		return builtinEval(args[1:])
-	}
-
-	if name == "exec" {
-		if len(args) > 1 {
-			proc := exec.Command(args[1], args[2:]...)
-			proc.Stdin = os.Stdin
-			proc.Stdout = os.Stdout
-			proc.Stderr = os.Stderr
-			proc.Run()
-			os.Exit(0)
-		}
-		return 0
-	}
-
-	if name == "source" || name == "." {
-		return builtinSource(args[1:])
-	}
-
-	if name == "type" {
-		return builtinType(args[1:])
-	}
-
-	if name == "hash" {
-		return 0
-	}
-
-	if name == "jobs" {
+	case "jobs":
 		return builtinJobs(args[1:])
-	}
-
-	if name == "fg" {
+	case "fg":
 		return builtinFg(args[1:])
-	}
-
-	if name == "bg" {
+	case "bg":
 		return builtinBg(args[1:])
 	}
 
-	if name == "kill" {
-		return builtinKill(args[1:])
-	}
-
-	if name == "wait" {
-		return builtinWait(args[1:])
-	}
-
-	if name == "trap" {
-		return builtinTrap(args[1:])
-	}
-
-	if name == "umask" {
-		return builtinUmask(args[1:])
-	}
-
-	if name == "ulimit" {
-		return builtinUlimit(args[1:])
-	}
-
-	if name == "times" {
-		return 0
-	}
-
-	if name == "getopts" {
-		return 0
-	}
-
-	if name == "newgrp" {
-		return 0
-	}
-
-	if name == ":" {
-		return 0
-	}
-
-	if name == "meow" {
-		fmt.Println("🐱 Meow!")
-		return 0
-	}
-
-	pathDirs := strings.Split(varGet("PATH"), ":")
-	for _, dir := range pathDirs {
-		if dir == "" {
-			continue
-		}
-		exePath := filepath.Join(dir, name)
-		if _, err := os.Stat(exePath); err == nil {
-			proc := exec.Command(exePath, args[1:]...)
-			proc.Stdin = os.Stdin
-			proc.Stdout = os.Stdout
-			proc.Stderr = os.Stderr
-			err := proc.Run()
-			if err != nil {
-				if exit, ok := err.(*exec.ExitError); ok {
-					if status, ok := exit.Sys().(syscall.WaitStatus); ok {
-						return status.ExitStatus()
-					}
-				}
-				return 1
-			}
-			return 0
-		}
-	}
-
+	// External commands
+	var exePath string
 	if strings.Contains(name, "/") {
-		proc := exec.Command(name, args[1:]...)
-		proc.Stdin = os.Stdin
-		proc.Stdout = os.Stdout
-		proc.Stderr = os.Stderr
-		err := proc.Run()
-		if err != nil {
-			if exit, ok := err.(*exec.ExitError); ok {
-				if status, ok := exit.Sys().(syscall.WaitStatus); ok {
-					return status.ExitStatus()
-				}
+		exePath = name
+	} else {
+		pathDirs := strings.Split(varGet("PATH"), ":")
+		for _, dir := range pathDirs {
+			if dir == "" {
+				continue
 			}
-			return 1
+			p := filepath.Join(dir, name)
+			if _, err := os.Stat(p); err == nil {
+				exePath = p
+				break
+			}
 		}
-		return 0
 	}
 
-	fmt.Printf("meowsh: %s: command not found\n", name)
-	return 127
+	if exePath == "" {
+		fmt.Printf("meowsh: %s: command not found\n", name)
+		return 127
+	}
+
+	cmd := exec.Command(exePath, args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	err := cmd.Start()
+	if err != nil {
+		fmt.Printf("meowsh: %v\n", err)
+		return 1
+	}
+
+	pgid, _ := syscall.Getpgid(cmd.Process.Pid)
+	job := &Job{
+		Id:      sh.NextJobId,
+		Pgid:    pgid,
+		Procs:   []*Process{{Pid: cmd.Process.Pid, Cmd: strings.Join(args, " "), State: PROC_RUNNING}},
+		State:   JOB_RUNNING,
+		CmdText: strings.Join(args, " "),
+	}
+	sh.NextJobId++
+	sh.Jobs = append(sh.Jobs, job)
+
+	if sh.Interactive && foreground {
+		// Give terminal to job
+		syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdin), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&pgid)))
+	}
+
+	if foreground {
+		return jobWaitFg(job)
+	} else {
+		fmt.Printf("[%d] %d\n", job.Id, job.Procs[0].Pid)
+		sh.LastBgPid = job.Procs[0].Pid
+		return 0
+	}
 }

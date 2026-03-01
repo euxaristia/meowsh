@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
+	"unsafe"
 )
 
 var sh Shell
@@ -14,6 +16,7 @@ func mainLoop() {
 	for {
 		prompt := ""
 		if sh.Interactive {
+			jobsNotify()
 			prompt = buildPrompt()
 		}
 
@@ -108,9 +111,15 @@ func main() {
 
 	if os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb" {
 		sh.Interactive = true
+		sh.Opts |= OPT_INTERACTIVE
+		sh.Opts |= OPT_MONITOR
 	}
 
 	if sh.Interactive {
+		sh.ShellPid = os.Getpid()
+		syscall.Setpgid(sh.ShellPid, sh.ShellPid)
+		syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdin), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
+
 		fmt.Fprintf(os.Stderr, "meowsh — welcome! (type 'exit' to quit)\n")
 	}
 

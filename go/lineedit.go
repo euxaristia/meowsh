@@ -18,12 +18,14 @@ type LineEditor struct {
 	historyIdx  int
 	origTermios syscall.Termios
 	rawMode     bool
+	reader      *bufio.Reader
 }
 
 func NewLineEditor() *LineEditor {
 	return &LineEditor{
 		history:    []string{},
 		historyIdx: -1,
+		reader:     bufio.NewReader(os.Stdin),
 	}
 }
 
@@ -200,8 +202,7 @@ func (le *LineEditor) promptWidth() int {
 }
 
 func (le *LineEditor) readLineCooked() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
+	line, err := le.reader.ReadString('\n')
 	return strings.TrimRight(line, "\r\n"), err
 }
 

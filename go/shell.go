@@ -27,6 +27,8 @@ func shellInit() {
 	sh.Vars["PS1"] = Var{Value: "𓃠 ", Flags: 0}
 	sh.Vars["PS2"] = Var{Value: "𓃠 ", Flags: 0}
 	sh.Vars["SHLVL"] = Var{Value: "1", Flags: 0}
+
+	jobsInit()
 }
 
 func getEnv(key, def string) string {
