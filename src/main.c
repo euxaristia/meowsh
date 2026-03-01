@@ -243,13 +243,15 @@ static void ensure_user_path_entries(void) {
   const char *home = var_get("HOME");
   char local_bin[PATH_MAX]; // flawfinder: ignore
   char home_bin[PATH_MAX];  // flawfinder: ignore
+  char go_bin[PATH_MAX];    // flawfinder: ignore
   const char *path;
 
   if (!sh.interactive || !home || !*home)
     return;
 
   if (snprintf(local_bin, sizeof(local_bin), "%s/.local/bin", home) < 0 ||
-      snprintf(home_bin, sizeof(home_bin), "%s/bin", home) < 0)
+      snprintf(home_bin, sizeof(home_bin), "%s/bin", home) < 0 ||
+      snprintf(go_bin, sizeof(go_bin), "%s/go/bin", home) < 0)
     return;
 
   path = var_get("PATH");
@@ -266,6 +268,14 @@ static void ensure_user_path_entries(void) {
     if (stat(local_bin, &st) == 0 && S_ISDIR(st.st_mode) &&
         !path_has_entry(path, local_bin))
       path_prepend_entry(local_bin);
+  }
+
+  path = var_get("PATH");
+  {
+    struct stat st;
+    if (stat(go_bin, &st) == 0 && S_ISDIR(st.st_mode) &&
+        !path_has_entry(path, go_bin))
+      path_prepend_entry(go_bin);
   }
 }
 
@@ -370,7 +380,7 @@ static char *build_starship_prompt(int status) {
 
     execlp("starship", "starship", "prompt", "--status", status_arg, // flawfinder: ignore
            "--shlvl", shlvl_arg, "--terminal-width", width_arg,
-           (char *)NULL);
+           "--shell", "sh", (char *)NULL);
     _exit(127);
   }
 

@@ -64,9 +64,7 @@ static char *search_path(const char *name) {
   struct stat st;
 
   if (strchr(name, '/')) {
-    int fd = open(name, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-    if (fd >= 0) {
-      close(fd);
+    if (access(name, X_OK) == 0 && stat(name, &st) == 0 && S_ISREG(st.st_mode)) {
       return sh_strdup(name);
     }
     return NULL;
@@ -76,9 +74,8 @@ static char *search_path(const char *name) {
   {
     const char *cached = hash_lookup(name);
     if (cached) {
-      int fd = open(cached, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-      if (fd >= 0) {
-        close(fd);
+      if (access(cached, X_OK) == 0 && stat(cached, &st) == 0 &&
+          S_ISREG(st.st_mode)) {
         return sh_strdup(cached);
       }
       /* Stale cache entry — fall through */
@@ -101,14 +98,11 @@ static char *search_path(const char *name) {
       snprintf(fullpath, sizeof(fullpath), "%.*s/%s", (int)(end - p), p, name);
     }
 
-    if (stat(fullpath, &st) == 0 && S_ISREG(st.st_mode)) {
-      int fd = open(fullpath, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-      if (fd >= 0) {
-        close(fd);
-        if (option_is_set(OPT_HASHALL))
-          hash_insert(name, fullpath);
-        return sh_strdup(fullpath);
-      }
+    if (access(fullpath, X_OK) == 0 && stat(fullpath, &st) == 0 &&
+        S_ISREG(st.st_mode)) {
+      if (option_is_set(OPT_HASHALL))
+        hash_insert(name, fullpath);
+      return sh_strdup(fullpath);
     }
 
     if (*end == '\0')
@@ -407,6 +401,22 @@ static int exec_simple_cmd(struct node *n, int flags) {
       /* Child process */
       trap_reset();
 
+      if (sh.interactive && option_is_set(OPT_MONITOR)) {
+        pid_t cpid = getpid();
+        setpgid(cpid, cpid);
+        if (!(flags & EXEC_BG)) {
+          if (sh.terminal_fd >= 0) {
+            /* Try multiple times or check for backgrounding if needed */
+            tcsetpgrp(sh.terminal_fd, cpid);
+          }
+        }
+        /* Reset all signals to default for the child */
+        for (int i = 1; i < NSIG; i++) {
+          if (i == SIGKILL || i == SIGSTOP) continue;
+          signal(i, SIG_DFL);
+        }
+      }
+
       /* Apply assignments to environment */
       if (n->data.simple.assigns)
         apply_assigns(n->data.simple.assigns, 1);
@@ -427,6 +437,14 @@ static int exec_simple_cmd(struct node *n, int flags) {
       }
     } else {
       /* Parent */
+      if (sh.interactive && option_is_set(OPT_MONITOR)) {
+        setpgid(pid, pid);
+        if (!(flags & EXEC_BG)) {
+          if (sh.terminal_fd >= 0)
+            tcsetpgrp(sh.terminal_fd, pid);
+        }
+      }
+
       /* fprintf(stderr, "[DEBUG] Parent waiting for pid %d\n", pid); */
       if (flags & EXEC_BG) {
         sh.last_bg_pid = pid;
@@ -437,6 +455,14 @@ static int exec_simple_cmd(struct node *n, int flags) {
           if (errno != EINTR)
             break;
         }
+
+        if (sh.interactive && option_is_set(OPT_MONITOR)) {
+          if (sh.terminal_fd >= 0) {
+            /* Hand terminal back to shell */
+            tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
+          }
+        }
+
         if (WIFEXITED(wstatus)) {
           status = WEXITSTATUS(wstatus);
         } else if (WIFSIGNALED(wstatus)) {

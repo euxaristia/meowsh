@@ -26,11 +26,12 @@ void var_init(void) {
   var_set("IFS", " \t\n", 0);
 
   /*
-   * Keep a usable command search path even if the parent environment is
-   * sparse (common for login managers/system shells).
+   * Keep a usable command search path if none is provided in the environment.
    */
-  var_set("PATH",
-          "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 0);
+  if (!var_get("PATH")) {
+    var_set("PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
+  }
 
   /* Set default PS1 */
   var_set("PS1", "meowsh % ", 0);
