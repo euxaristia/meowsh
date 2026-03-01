@@ -46,13 +46,10 @@ void crt_boot_sequence(void) {
   slow_print("INITIALIZING MEOW-SUBSYSTEM...\n", 100);
   slow_print("BOOTING MEOWSH INTERACTIVE SHELL...\n\n", 150);
 
-  /* Set terminal to green if we can */
-  printf("\x1b[32m");
-  fflush(stdout);
-
   struct timespec ts = {1, 0};
   nanosleep(&ts, NULL);
 
-  printf("\x1b[2J\x1b[H");
+  /* Clear screen and reset colors */
+  printf("\x1b[2J\x1b[H\x1b[0m");
   fflush(stdout);
 }

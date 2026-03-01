@@ -299,168 +299,40 @@ static const char *lineedit_find_history_suggestion(const char *line,
 
 static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
                          int show_suggestion) {
-  struct strbuf colored = STRBUF_INIT;
   struct strbuf out = STRBUF_INIT;
   const char *line = sb->buf ? sb->buf : "";
-  const char *p = line;
-  int in_quote = 0;
-  char quote_char = 0;
-  const char *suggestion = NULL;
-  size_t unknown_start[64];
-  size_t unknown_len[64];
-  size_t unknown_count = 0;
-  size_t unknown_idx = 0;
-  size_t i;
-
-  /* Determine unknown command tokens at the start of each command segment. */
-  {
-    size_t len = strlen(line); // flawfinder: ignore
-    size_t seg = 0;
-    char token[PATH_MAX];
-
-    while (seg < len) {
-      size_t j = seg;
-      int found_cmd = 0;
-
-      while (j < len && (line[j] == ' ' || line[j] == '\t'))
-        j++;
-      if (j >= len)
-        break;
-
-      for (;;) {
-        size_t ts, te, tl;
-
-        while (j < len && (line[j] == ' ' || line[j] == '\t'))
-          j++;
-        if (j >= len)
-          break;
-
-        if (line[j] == ';' || line[j] == '|' || line[j] == '&')
-          break;
-
-        ts = j;
-        while (j < len && line[j] != ' ' && line[j] != '\t' && line[j] != ';' &&
-               line[j] != '|' && line[j] != '&' && line[j] != '<' &&
-               line[j] != '>') {
-          j++;
-        }
-        te = j;
-        tl = te - ts;
-        if (tl == 0)
-          continue;
-
-        if (tl >= sizeof(token)) {
-          found_cmd = 1;
-          break;
-        }
-        memcpy(token, line + ts, tl);
-        token[tl] = '\0';
-
-        if (strchr(token, '=') && !strchr(token, '/'))
-          continue;
-
-        if (!command_exists_for_highlight(token) &&
-            unknown_count <
-                (sizeof(unknown_start) / sizeof(unknown_start[0]))) {
-          unknown_start[unknown_count] = ts;
-          unknown_len[unknown_count] = tl;
-          unknown_count++;
-        }
-        found_cmd = 1;
-        break;
-      }
-
-      while (j < len && line[j] != ';' && line[j] != '|' && line[j] != '&')
-        j++;
-      if (j < len) {
-        if ((line[j] == '&' || line[j] == '|') && j + 1 < len &&
-            line[j + 1] == line[j]) {
-          j += 2;
-        } else {
-          j++;
-        }
-      }
-      seg = j;
-
-      if (!found_cmd && seg >= len)
-        break;
-    }
-  }
-
-  /* Find suggestion if at end of line */
-  if (show_suggestion && pos == (int)sb->len && sb->len > 0) {
-    const char *match = lineedit_find_history_suggestion(sb->buf, sb->len);
-    if (match)
-      suggestion = match + sb->len;
-  }
-
   const char *crt = var_get("MEOWSH_CRT");
   int is_crt = crt && strcmp(crt, "1") == 0;
 
-  /* Highlight words: builtins in blue, paths in cyan etc. */
-  /* For now: simple quotes and comments */
-  if (is_crt)
-    strbuf_addstr(&colored, "\x1b[32m");
-  while (*p) {
-    i = (size_t)(p - line);
-    if (!in_quote && unknown_idx < unknown_count &&
-        i == unknown_start[unknown_idx]) {
-      size_t seglen = unknown_len[unknown_idx];
-      size_t k;
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[31m"); /* Red */
-      for (k = 0; k < seglen && p[k]; k++)
-        strbuf_addch(&colored, p[k]);
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[0m");
-      p += seglen;
-      unknown_idx++;
-    } else if (!in_quote && (*p == '\'' || *p == '"')) {
-      in_quote = 1;
-      quote_char = *p;
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[33m"); /* Yellow */
-      strbuf_addch(&colored, *p++);
-    } else if (in_quote && *p == quote_char) {
-      strbuf_addch(&colored, *p++);
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[0m");
-      in_quote = 0;
-    } else if (!in_quote && *p == '#') {
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[32m"); /* Green */
-      while (*p)
-        strbuf_addch(&colored, *p++);
-      if (!is_crt)
-        strbuf_addstr(&colored, "\x1b[0m");
-    } else {
-      strbuf_addch(&colored, *p++);
-    }
-  }
-  if (in_quote && !is_crt)
-    strbuf_addstr(&colored, "\x1b[0m");
+  /* Use a single write buffer for smoothness. */
+  strbuf_addstr(&out, "\x1b[?25l"); /* Hide cursor */
+  strbuf_addstr(&out, "\r\x1b[2K"); /* CR and clear line */
 
-  /* Ghost suggestion in gray (or dark green in CRT) */
-  if (suggestion && *suggestion) {
-    if (is_crt)
-      strbuf_addstr(&colored, "\x1b[32m"); /* Just green for now */
-    else
-      strbuf_addstr(&colored, "\x1b[90m"); /* Dark gray */
-    strbuf_addstr(&colored, suggestion);
-    if (!is_crt)
-      strbuf_addstr(&colored, "\x1b[0m");
-  }
-
-  if (is_crt)
-    strbuf_addstr(&colored, "\x1b[0m");
-  /* Render in one write to reduce cursor jitter/flicker while typing. */
-  strbuf_addstr(&out, "\x1b[?25l\r\x1b[K"); /* Hide cursor, CR, clear line */
   if (prompt)
     strbuf_addstr(&out, prompt);
-  if (colored.buf)
-    strbuf_addmem(&out, colored.buf, colored.len);
 
-  /* Position cursor: CR then move past prompt and pos chars */
+  if (is_crt)
+    strbuf_addstr(&out, "\x1b[32m");
+
+  /* Print content. For now, simple text to ensure visibility. */
+  if (*line)
+    strbuf_addstr(&out, line);
+
+  if (show_suggestion && pos == (int)sb->len && sb->len > 0) {
+    const char *match = lineedit_find_history_suggestion(sb->buf, sb->len);
+    if (match) {
+      if (!is_crt)
+        strbuf_addstr(&out, "\x1b[90m"); /* Gray */
+      strbuf_addstr(&out, match + sb->len);
+      if (!is_crt)
+        strbuf_addstr(&out, "\x1b[0m");
+    }
+  }
+
+  if (is_crt)
+    strbuf_addstr(&out, "\x1b[0m");
+
+  /* Position cursor. Use \r and reprint prompt to move right reliably. */
   strbuf_addstr(&out, "\r");
   if (prompt)
     strbuf_addstr(&out, prompt);
@@ -468,23 +340,21 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   if (pos > 0) {
     int i;
     int cols = 0;
-    char esc[32];
-
-    for (i = 0; i < pos; i++) {
-      if (sb->buf && sb->buf[i] == '\t')
+    for (i = 0; i < pos && line[i]; i++) {
+      if (line[i] == '\t')
         cols += 4;
       else
         cols++;
     }
     if (cols > 0) {
+      char esc[32];
       snprintf(esc, sizeof(esc), "\x1b[%dC", cols);
       strbuf_addstr(&out, esc);
     }
   }
+
   strbuf_addstr(&out, "\x1b[?25h"); /* Show cursor */
-  if (out.buf)
-    write(fd, out.buf, out.len);
-  strbuf_free(&colored);
+  write(fd, out.buf, out.len);
   strbuf_free(&out);
 }
 
@@ -804,7 +674,7 @@ static int lineedit_apply_completion(struct strbuf *sb, int *pos,
 char *lineedit_read(const char *prompt) {
   struct strbuf sb = STRBUF_INIT;
   int fd_in = STDIN_FILENO;
-  int fd_out = STDOUT_FILENO;
+  int fd_out = STDERR_FILENO;
   int pos = 0;
   int history_idx = history_count;
   char *saved_current = NULL;
