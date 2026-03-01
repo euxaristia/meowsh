@@ -38,6 +38,7 @@ struct cmd_entry {
 };
 
 void find_command(const char *name, struct cmd_entry *entry);
+char *search_path(const char *name);
 
 /* Subshell execution */
 

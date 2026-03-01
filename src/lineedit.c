@@ -146,6 +146,11 @@ static int lineedit_next_char(int fd, char *out) {
     while ((n = read(fd, lineedit_pending, sizeof(lineedit_pending))) < 0) { // flawfinder: ignore
       if (errno == EINTR)
         continue;
+      if (errno == EIO && sh.interactive && sh.shell_pgid > 0) {
+        /* We probably lost the foreground. Try to take it back. */
+        tcsetpgrp(fd, sh.shell_pgid);
+        continue;
+      }
       return 0;
     }
     if (n == 0)

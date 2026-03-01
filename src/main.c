@@ -1,11 +1,13 @@
 /*
  * meowsh — POSIX-compliant shell
- * main.c — Entry point, main loop, startup files
+ * main.c — Entry point and main loop
  */
 
 #define _POSIX_C_SOURCE 200809L
 
 #include "alias.h"
+#include "ast.h"
+#include "builtin.h"
 #include "compat.h"
 #include "crt.h"
 #include "exec.h"
@@ -18,39 +20,18 @@
 #include "mystring.h"
 #include "options.h"
 #include "parser.h"
-#include "sh_error.h"
 #include "shell.h"
 #include "trap.h"
 #include "var.h"
 
 #include <locale.h>
-#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-
-static FILE *main_debug_fp;
-static int main_debug_inited;
-
-static void __attribute__((format(printf, 1, 2))) // flawfinder: ignore
-main_debugf(const char *fmt, ...) {
-  va_list ap;
-
-  if (!main_debug_inited) {
-    main_debug_inited = 1;
-    const char *enabled = getenv("MEOWSH_DEBUG_LINEEDIT"); // flawfinder: ignore
-    if (enabled && *enabled)
-      main_debug_fp =
-          fopen("/tmp/meowsh-lineedit.log", "a"); // flawfinder: ignore
-  }
-  if (!main_debug_fp)
-    return;
-
-  va_start(ap, fmt);
-  vfprintf(main_debug_fp, fmt, ap); // flawfinder: ignore
-  va_end(ap);
-  fputc('\n', main_debug_fp);
-  fflush(main_debug_fp);
-}
+#include <termios.h>
+#include <unistd.h>
 
 static void shell_init(void) {
   memset(&sh, 0, sizeof(sh));
@@ -79,34 +60,34 @@ static void setup_interactive(void) {
 
   sh.opts |= OPT_INTERACTIVE;
 
-  /* Take control of the terminal if job control */
   if (isatty(STDIN_FILENO)) {
     sh.terminal_fd = STDIN_FILENO;
     sh.opts |= OPT_MONITOR;
 
-    /* Loop until we are in the foreground.  */
+    /* Loop until we are in the foreground. */
     while (tcgetpgrp(sh.terminal_fd) != (sh.shell_pgid = getpgrp()))
       kill(-sh.shell_pgid, SIGTTIN);
 
-    /* Ignore job control signals in the shell */
-    signal(SIGINT, SIG_IGN);
-    signal(SIGQUIT, SIG_IGN);
-    signal(SIGTSTP, SIG_IGN);
-    signal(SIGTTIN, SIG_IGN);
-    signal(SIGTTOU, SIG_IGN);
+    /* Ignore interactive and job-control signals. */
+    struct sigaction sa_ignore;
+    sa_ignore.sa_handler = SIG_IGN;
+    sigemptyset(&sa_ignore.sa_mask);
+    sa_ignore.sa_flags = 0;
 
-    /* Put shell in its own process group */
+    sigaction(SIGINT, &sa_ignore, NULL);
+    sigaction(SIGQUIT, &sa_ignore, NULL);
+    sigaction(SIGTSTP, &sa_ignore, NULL);
+    sigaction(SIGTTIN, &sa_ignore, NULL);
+    sigaction(SIGTTOU, &sa_ignore, NULL);
+
+    /* Put ourselves in our own process group. */
     sh.shell_pgid = getpid();
     if (setpgid(sh.shell_pgid, sh.shell_pgid) < 0) {
-      perror("setpgid");
+      sh.shell_pgid = getpgrp();
     }
-    
-    /* Take control of terminal */
-    tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
 
-    /* Final global signal overrides */
-    sh_signal(SIGINT, SIG_IGN);
-    sh_signal(SIGQUIT, SIG_IGN);
+    /* Grab control of the terminal. */
+    tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
 
     jobs_init();
   }
@@ -135,10 +116,6 @@ static void source_profile(void) {
   const char *env = var_get("ENV");
   char *expanded_env = NULL;
 
-  /*
-   * input_push_* uses a stack (LIFO), so push startup files in reverse
-   * of desired execution order.
-   */
   if (env && *env) {
     expanded_env = expand_heredoc(env);
     if (expanded_env && *expanded_env) {
@@ -152,7 +129,6 @@ static void source_profile(void) {
   free(expanded_env);
 
   if (sh.login_shell) {
-    /* $HOME/.profile should run after /etc/profile */
     {
       const char *home = var_get("HOME");
       if (home) {
@@ -166,8 +142,7 @@ static void source_profile(void) {
       }
     }
     {
-      int fd =
-          open("/etc/profile", O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
+      int fd = open("/etc/profile", O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
       if (fd >= 0) {
         close(fd);
         input_push_file("/etc/profile");
@@ -176,61 +151,18 @@ static void source_profile(void) {
   }
 }
 
-static int command_in_path(const char *name) {
-  const char *path = var_get("PATH");
-  const char *p, *end;
-  char fullpath[PATH_MAX]; // flawfinder: ignore
-
-  if (!name || !*name)
-    return 0;
-
-  if (strchr(name, '/')) {
-    int fd = open(name, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-    if (fd >= 0) {
-      close(fd);
-      return 1;
-    }
-    return 0;
-  }
-
-  if (!path || !*path)
-    return 0;
-
-  for (p = path;; p = end + 1) {
-    end = strchr(p, ':');
-    if (!end)
-      end = p + strlen(p); // flawfinder: ignore // flawfinder: ignore
-    if (end == p)
-      snprintf(fullpath, sizeof(fullpath), "./%s", name);
-    else
-      snprintf(fullpath, sizeof(fullpath), "%.*s/%s", (int)(end - p), p, name);
-    {
-      int fd = open(fullpath, O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
-      if (fd >= 0) {
-        close(fd);
-        return 1;
-      }
-    }
-    if (*end == '\0')
-      break;
-  }
-
-  return 0;
-}
-
 static int path_has_entry(const char *path, const char *entry) {
-  const char *p;
-  const char *end;
+  const char *p, *end;
   size_t elen;
 
   if (!path || !entry || !*entry)
     return 0;
 
-  elen = strlen(entry); // flawfinder: ignore // flawfinder: ignore
+  elen = strlen(entry); // flawfinder: ignore
   for (p = path;; p = end + 1) {
     end = strchr(p, ':');
     if (!end)
-      end = p + strlen(p); // flawfinder: ignore // flawfinder: ignore
+      end = p + strlen(p); // flawfinder: ignore
     if ((size_t)(end - p) == elen && strncmp(p, entry, elen) == 0)
       return 1;
     if (*end == '\0')
@@ -249,7 +181,7 @@ static void path_prepend_entry(const char *entry) {
   if (!entry || !*entry)
     return;
 
-  elen = strlen(entry); // flawfinder: ignore           // flawfinder: ignore
+  elen = strlen(entry); // flawfinder: ignore
   plen = path ? strlen(path) : 0; // flawfinder: ignore
   new_path = sh_malloc(elen + (plen ? 1 + plen : 0) + 1);
   memcpy(new_path, entry, elen); // flawfinder: ignore
@@ -320,6 +252,15 @@ static int ps1_is_default_style(const char *ps1) {
          strcmp(ps1, "𓃠 ") == 0;
 }
 
+static int command_in_path(const char *name) {
+  char *p = search_path(name);
+  if (p) {
+    free(p);
+    return 1;
+  }
+  return 0;
+}
+
 static void maybe_init_starship(void) {
   const char *ps1;
   const char *opt;
@@ -354,15 +295,13 @@ static int terminal_width(void) {
   }
 
   columns = var_get("COLUMNS");
-  if (!columns || !*columns)
-    return 80;
+  if (columns) {
+    v = sh_strtol(columns, &endp, 10);
+    if (v > 0 && *endp == '\0')
+      return (int)v;
+  }
 
-  errno = 0;
-  v = strtol(columns, &endp, 10);
-  if (errno != 0 || endp == columns || *endp != '\0' || v <= 0 || v > 10000)
-    return 80;
-
-  return (int)v;
+  return 80;
 }
 
 static char *build_starship_prompt(int status) {
@@ -479,8 +418,6 @@ static char *with_meow_marker(const char *prompt) {
     matched = 1;
   } else if (*p == '>' || *p == '$' ||
              ((unsigned char)p[0] == 0x27 && (unsigned char)p[1] == 0x6f)) {
-    /* Some environments might represent ❯ differently or we check for common
-     * symbols */
     if (*p == '>' || *p == '$') {
       p++;
       matched = 1;
@@ -516,25 +453,15 @@ static void main_loop(void) {
   char *starship_ps1 = NULL;
 
   for (;;) {
-    free(starship_ps1);
-    starship_ps1 = NULL;
-
-    /* Process any pending traps */
-    trap_check();
-
-    /* Check for dead children and clean up job table */
     if (sh.interactive) {
       jobs_notify();
       jobs_cleanup();
     }
 
-    /* Parse one complete command */
     lexer_clear_heredocs();
     arena_free(&parse_arena);
 
     if (sh.interactive) {
-      /* ENV/profile commands may blank PS1 after startup; keep prompt usable.
-       */
       ensure_default_ps1();
 
       const char *cfg_ps1 = var_get("PS1");
@@ -570,8 +497,6 @@ static void main_loop(void) {
         }
       } else if (ps1_is_default_style(cfg_ps1)) {
         shorten_path(short_pwd, pwd, sizeof(short_pwd));
-
-        /* Fish-style prompt: [user] /s/p/path $ */
         snprintf(ps1_buf, sizeof(ps1_buf),
                  "\x1b[32m%s\x1b[0m \x1b[34m%s\x1b[0m 𓃠  \x1b[0m", user,
                  short_pwd);
@@ -598,17 +523,12 @@ static void main_loop(void) {
     }
     struct node *tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
     if (!tree) {
-      main_debugf("parse_command -> NULL interactive=%d eof=%d", sh.interactive,
-                  (sh.input ? sh.input->eof : -1));
-      
       if (sh.parse_error) {
         sh.parse_error = 0;
         continue;
       }
 
       if (sh.input && sh.input->eof) {
-        /* If we're on a stacked source (e.g. startup file),
-         * pop it and continue reading from the previous source. */
         if (sh.input->prev) {
           input_pop();
           continue;
@@ -618,7 +538,6 @@ static void main_loop(void) {
       continue;
     }
 
-    /* Execute */
     if (!option_is_set(OPT_NOEXEC))
       exec_node(tree, 0);
   }
@@ -636,7 +555,6 @@ int main(int argc, char **argv) {
   if (sh.argv0 && sh.argv0[0] == '-')
     sh.login_shell = 1;
 
-  /* Import environment */
   {
     extern char **environ;
     char **envp = environ;
@@ -646,11 +564,12 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Parse command-line options */
+  alias_set("la", "ls -A");
+  alias_set("ll", "ls -l");
+
   optind = options_parse(argc, argv);
 
   if (optind < 0) {
-    /* -c mode */
     int idx = -optind;
     const char *cmd = argv[idx];
     size_t cmdlen;
@@ -659,11 +578,10 @@ int main(int argc, char **argv) {
     if (idx + 1 < argc)
       sh.argv0 = argv[idx + 1];
 
-    /* Set positional params from remaining args */
     if (idx + 2 < argc)
       var_set_posparams(argc - idx - 2, argv + idx + 2);
 
-    cmdlen = strlen(cmd); // flawfinder: ignore // flawfinder: ignore
+    cmdlen = strlen(cmd); // flawfinder: ignore
     cmdline = sh_malloc(cmdlen + 2);
     memcpy(cmdline, cmd, cmdlen); // flawfinder: ignore
     cmdline[cmdlen] = '\n';
@@ -676,24 +594,6 @@ int main(int argc, char **argv) {
     return sh.last_status;
   }
 
-  if (optind < argc) {
-    /* Script file mode */
-    char *script = argv[optind];
-    sh.argv0 = script;
-
-    if (optind + 1 < argc)
-      var_set_posparams(argc - optind - 1, argv + optind + 1);
-
-    input_push_file(script);
-    source_profile();
-    if (!sh.input)
-      return 127;
-    main_loop();
-    input_pop();
-    return sh.last_status;
-  }
-
-  /* Interactive / stdin mode */
   if (isatty(STDIN_FILENO))
     sh.interactive = 1;
 

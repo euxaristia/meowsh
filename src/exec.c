@@ -57,7 +57,7 @@ static void hash_insert(const char *name, const char *path) {
 }
 
 /* Search PATH for an executable */
-static char *search_path(const char *name) {
+char *search_path(const char *name) {
   const char *path_var;
   const char *p, *end;
   char fullpath[PATH_MAX]; // flawfinder: ignore
@@ -391,8 +391,13 @@ static int exec_simple_cmd(struct node *n, int flags) {
   } break;
 
   case CMD_EXTERNAL: {
-    /* DEBUG: Trace execution */
-    /* fprintf(stderr, "[DEBUG] Executing external: %s\n", entry.u.path); */
+    struct termios tmodes;
+    int have_tmodes = 0;
+
+    if (sh.interactive && sh.terminal_fd >= 0) {
+      if (tcgetattr(sh.terminal_fd, &tmodes) == 0)
+        have_tmodes = 1;
+    }
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -406,12 +411,11 @@ static int exec_simple_cmd(struct node *n, int flags) {
         pid_t cpid = getpid();
         setpgid(cpid, cpid);
         if (!(flags & EXEC_BG)) {
-          if (sh.terminal_fd >= 0) {
-            /* Try multiple times or check for backgrounding if needed */
+          if (sh.terminal_fd >= 0)
             tcsetpgrp(sh.terminal_fd, cpid);
-          }
         }
-        /* Reset all signals to default for the child */
+        
+        /* Reset signals to default for the child */
         for (int i = 1; i < NSIG; i++) {
           if (i == SIGKILL || i == SIGSTOP) continue;
           signal(i, SIG_DFL);
@@ -431,7 +435,6 @@ static int exec_simple_cmd(struct node *n, int flags) {
 
       {
         char **envp = var_environ();
-        /* fprintf(stderr, "[DEBUG] Child execve: %s\n", entry.u.path); */
         execve(entry.u.path, argv, envp);
         sh_errorf("%s", argv[0]);
         _exit(errno == ENOENT ? 127 : 126);
@@ -446,7 +449,6 @@ static int exec_simple_cmd(struct node *n, int flags) {
         }
       }
 
-      /* fprintf(stderr, "[DEBUG] Parent waiting for pid %d\n", pid); */
       if (flags & EXEC_BG) {
         sh.last_bg_pid = pid;
         status = 0;
@@ -459,8 +461,9 @@ static int exec_simple_cmd(struct node *n, int flags) {
 
         if (sh.interactive && option_is_set(OPT_MONITOR)) {
           if (sh.terminal_fd >= 0) {
-            /* Hand terminal back to shell */
             tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
+            if (have_tmodes)
+              tcsetattr(sh.terminal_fd, TCSADRAIN, &tmodes);
           }
         }
 
@@ -471,9 +474,7 @@ static int exec_simple_cmd(struct node *n, int flags) {
         } else if (WIFSTOPPED(wstatus)) {
           status = 128 + WSTOPSIG(wstatus);
           fprintf(stderr, "\n[Stopped] %d\n", pid);
-          /* We should really register this as a job */
         }
-        /* fprintf(stderr, "[DEBUG] Child finished, status=%d\n", status); */
       }
     }
     free(entry.u.path);
