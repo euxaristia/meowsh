@@ -72,50 +72,49 @@ void lexer_set_prompts(const char *ps1, const char *ps2) {
 }
 
 const char *token_name(token_type_t t) {
-  // cppcheck-suppress variableScope
-  static const char *names[] = {
-      [TOK_WORD] = "WORD",
-      [TOK_ASSIGNMENT] = "ASSIGNMENT",
-      [TOK_IO_NUMBER] = "IO_NUMBER",
-      [TOK_PIPE] = "|",
-      [TOK_AND_IF] = "&&",
-      [TOK_OR_IF] = "||",
-      [TOK_SEMI] = ";",
-      [TOK_AMP] = "&",
-      [TOK_DSEMI] = ";;",
-      [TOK_LPAREN] = "(",
-      [TOK_RPAREN] = ")",
-      [TOK_LESS] = "<",
-      [TOK_GREAT] = ">",
-      [TOK_DLESS] = "<<",
-      [TOK_DGREAT] = ">>",
-      [TOK_LESSAND] = "<&",
-      [TOK_GREATAND] = ">&",
-      [TOK_LESSGREAT] = "<>",
-      [TOK_CLOBBER] = ">|",
-      [TOK_DLESSDASH] = "<<-",
-      [TOK_IF] = "if",
-      [TOK_THEN] = "then",
-      [TOK_ELSE] = "else",
-      [TOK_ELIF] = "elif",
-      [TOK_FI] = "fi",
-      [TOK_DO] = "do",
-      [TOK_DONE] = "done",
-      [TOK_CASE] = "case",
-      [TOK_ESAC] = "esac",
-      [TOK_WHILE] = "while",
-      [TOK_UNTIL] = "until",
-      [TOK_FOR] = "for",
-      [TOK_IN] = "in",
-      [TOK_LBRACE] = "{",
-      [TOK_RBRACE] = "}",
-      [TOK_BANG] = "!",
-      [TOK_NEWLINE] = "NEWLINE",
-      [TOK_EOF] = "EOF",
-  };
-
-  if (t < TOK_COUNT)
+  if (t < TOK_COUNT) {
+    static const char *names[] = {
+        [TOK_WORD] = "WORD",
+        [TOK_ASSIGNMENT] = "ASSIGNMENT",
+        [TOK_IO_NUMBER] = "IO_NUMBER",
+        [TOK_PIPE] = "|",
+        [TOK_AND_IF] = "&&",
+        [TOK_OR_IF] = "||",
+        [TOK_SEMI] = ";",
+        [TOK_AMP] = "&",
+        [TOK_DSEMI] = ";;",
+        [TOK_LPAREN] = "(",
+        [TOK_RPAREN] = ")",
+        [TOK_LESS] = "<",
+        [TOK_GREAT] = ">",
+        [TOK_DLESS] = "<<",
+        [TOK_DGREAT] = ">>",
+        [TOK_LESSAND] = "<&",
+        [TOK_GREATAND] = ">&",
+        [TOK_LESSGREAT] = "<>",
+        [TOK_CLOBBER] = ">|",
+        [TOK_DLESSDASH] = "<<-",
+        [TOK_IF] = "if",
+        [TOK_THEN] = "then",
+        [TOK_ELSE] = "else",
+        [TOK_ELIF] = "elif",
+        [TOK_FI] = "fi",
+        [TOK_DO] = "do",
+        [TOK_DONE] = "done",
+        [TOK_CASE] = "case",
+        [TOK_ESAC] = "esac",
+        [TOK_WHILE] = "while",
+        [TOK_UNTIL] = "until",
+        [TOK_FOR] = "for",
+        [TOK_IN] = "in",
+        [TOK_LBRACE] = "{",
+        [TOK_RBRACE] = "}",
+        [TOK_BANG] = "!",
+        [TOK_NEWLINE] = "NEWLINE",
+        [TOK_EOF] = "EOF",
+    };
     return names[t] ? names[t] : "???";
+  }
   return "???";
 }
 
@@ -141,16 +140,12 @@ static struct token *make_token(token_type_t type, const char *value) {
 
 static int nextchar(void) { return input_getc(); }
 
-// cppcheck-suppress variableScope
 static void pushback(int c) { input_ungetc(c); }
 
 /* Skip whitespace (spaces and tabs, not newlines) */
 static void skip_blanks(void) {
-  // cppcheck-suppress variableScope
-  int c;
-
   for (;;) {
-    c = nextchar();
+    int c = nextchar();
     if (c != ' ' && c != '\t') {
       pushback(c);
       return;
