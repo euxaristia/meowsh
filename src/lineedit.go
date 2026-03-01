@@ -217,11 +217,17 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 					le.refreshLine()
 				}
 			case 9: // Tab
-				le.handleTab()
+				le.handleTab(false)
 				le.refreshLine()
 			case 27: // Escape sequence
 				if i+2 < n && buf[i+1] == '[' {
 					key := buf[i+2]
+					if key == 'Z' { // Shift-Tab
+						le.handleTab(true)
+						le.refreshLine()
+						i += 2
+						continue
+					}
 					if len(le.lastMatches) > 0 {
 						switch key {
 						case 'A': // Up
@@ -406,9 +412,13 @@ func (le *LineEditor) readLineCooked() (string, error) {
 	return strings.TrimRight(line, "\r\n"), err
 }
 
-func (le *LineEditor) handleTab() {
+func (le *LineEditor) handleTab(back bool) {
 	if len(le.lastMatches) > 0 {
-		le.moveMenu(0, 1)
+		dCol := 1
+		if back {
+			dCol = -1
+		}
+		le.moveMenu(0, dCol)
 		le.applyMatch()
 		return
 	}
