@@ -128,9 +128,11 @@ found: {
   status = 0;
   for (;;) {
     struct node *tree;
-    arena_free(&parse_arena);
+    struct arena_state state;
+    arena_checkpoint(&parse_arena, &state);
     tree = parse_command(NULL, NULL);
     if (!tree) {
+      arena_rollback(&parse_arena, &state);
       int c = input_getc();
       if (c < 0)
         break;
@@ -138,6 +140,7 @@ found: {
       continue;
     }
     status = exec_node(tree, 0);
+    arena_rollback(&parse_arena, &state);
     if (sh.want_return)
       break;
   }

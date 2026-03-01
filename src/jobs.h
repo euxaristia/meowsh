@@ -44,8 +44,13 @@ struct job {
 void jobs_init(void);
 
 /* Create a new job */
+struct job *job_alloc(void);
 
 /* Add a process to a job */
+void job_add_proc(struct job *j, pid_t pid, const char *cmd);
+
+/* Free a job */
+void job_free(struct job *j);
 
 /* Update process status */
 void job_update_status(pid_t pid, int status);

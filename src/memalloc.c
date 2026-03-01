@@ -88,6 +88,25 @@ void arena_free(struct arena *a) {
   a->current = NULL;
 }
 
+void arena_checkpoint(struct arena *a, struct arena_state *s) {
+  s->head = a->head;
+  s->current = a->current;
+  s->used = a->current ? a->current->used : 0;
+}
+
+void arena_rollback(struct arena *a, struct arena_state *s) {
+  struct arena_block *b, *next;
+
+  for (b = a->head; b && b != s->head; b = next) {
+    next = b->next;
+    free(b);
+  }
+  a->head = s->head;
+  a->current = s->current;
+  if (a->current)
+    a->current->used = s->used;
+}
+
 void *sh_malloc(size_t size) {
   void *p = malloc(size);
   if (!p && size)

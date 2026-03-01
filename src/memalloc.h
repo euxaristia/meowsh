@@ -10,16 +10,16 @@
 
 /* Arena block */
 struct arena_block {
-	struct arena_block *next;
-	size_t size;
-	size_t used;
-	char data[]; // flawfinder: ignore
+  struct arena_block *next;
+  size_t size;
+  size_t used;
+  char data[]; // flawfinder: ignore
 };
 
 /* Arena */
 struct arena {
-	struct arena_block *head;
-	struct arena_block *current;
+  struct arena_block *head;
+  struct arena_block *current;
 };
 
 /* Arena operations */
@@ -28,6 +28,15 @@ void *arena_alloc(struct arena *a, size_t size);
 char *arena_strdup(struct arena *a, const char *s);
 char *arena_strndup(struct arena *a, const char *s, size_t n);
 void arena_free(struct arena *a);
+
+struct arena_state {
+  struct arena_block *head;
+  struct arena_block *current;
+  size_t used;
+};
+
+void arena_checkpoint(struct arena *a, struct arena_state *s);
+void arena_rollback(struct arena *a, struct arena_state *s);
 
 /* Global parse arena */
 extern struct arena parse_arena;

@@ -36,6 +36,7 @@
 /* Internal expand state */
 
 static char *expand_param(const char *s, int quoted);
+static char *expand_raw(const char *s, int quoted, int *was_quoted);
 static char *expand_cmdsub(const char *cmd);
 static char *expand_arith_expr(const char *expr);
 static void expand_tilde(struct strbuf *sb, const char **sp);
@@ -128,7 +129,8 @@ static char *expand_param(const char *s, int quoted) {
       {
         char buf[32]; // flawfinder: ignore
         snprintf(buf, sizeof(buf), "%zu",
-                 val ? strlen(val) : 0); // flawfinder: ignore // flawfinder: ignore
+                 val ? strlen(val)
+                     : 0); // flawfinder: ignore // flawfinder: ignore
         strbuf_addstr(&sb, buf);
       }
       return strbuf_detach(&sb);
@@ -182,25 +184,32 @@ static char *expand_param(const char *s, int quoted) {
 
         switch (op) {
         case '-':
-          if ((!val) || (colon && val[0] == '\0'))
-            strbuf_addstr(&sb, word);
-          else
+          if ((!val) || (colon && val[0] == '\0')) {
+            char *exp = expand_raw(word, 0, NULL);
+            strbuf_addstr(&sb, exp);
+            free(exp);
+          } else {
             strbuf_addstr(&sb, val);
+          }
           break;
         case '=':
           if ((!val) || (colon && val[0] == '\0')) {
-            var_set(name, word, 0);
-            strbuf_addstr(&sb, word);
+            char *exp = expand_raw(word, 0, NULL);
+            var_set(name, exp, 0);
+            strbuf_addstr(&sb, exp);
+            free(exp);
           } else {
             strbuf_addstr(&sb, val);
           }
           break;
         case '?':
           if ((!val) || (colon && val[0] == '\0')) {
-            if (word[0])
-              sh_error("%s: %s", name, word);
+            char *exp = expand_raw(word, 0, NULL);
+            if (exp[0])
+              sh_error("%s: %s", name, exp);
             else
               sh_error("%s: parameter not set", name);
+            free(exp);
             free(word);
             strbuf_free(&sb);
             sh.last_status = 1;
@@ -209,13 +218,17 @@ static char *expand_param(const char *s, int quoted) {
           strbuf_addstr(&sb, val);
           break;
         case '+':
-          if (val && !(colon && val[0] == '\0'))
-            strbuf_addstr(&sb, word);
+          if (val && !(colon && val[0] == '\0')) {
+            char *exp = expand_raw(word, 0, NULL);
+            strbuf_addstr(&sb, exp);
+            free(exp);
+          }
           break;
         case '#': /* ${var#pattern} — shortest prefix */
         case 'H': /* ${var##pattern} — longest prefix */
           if (val) {
-            size_t vlen = strlen(val); // flawfinder: ignore // flawfinder: ignore
+            size_t vlen =
+                strlen(val); // flawfinder: ignore // flawfinder: ignore
             size_t i;
             int found = 0;
             if (op == 'H') {
@@ -252,7 +265,8 @@ static char *expand_param(const char *s, int quoted) {
         case '%': /* ${var%pattern} — shortest suffix */
         case 'P': /* ${var%%pattern} — longest suffix */
           if (val) {
-            size_t vlen = strlen(val); // flawfinder: ignore // flawfinder: ignore
+            size_t vlen =
+                strlen(val); // flawfinder: ignore // flawfinder: ignore
             size_t i;
             int found = 0;
             if (op == 'P') {
@@ -712,17 +726,53 @@ char **expand_words(struct word *words, int *countp) {
   int cap = 0;
 
   for (w = words; w; w = w->next) {
-    char *expanded;
+    struct strbuf raw = STRBUF_INIT;
+    struct wordpart *wp;
     int was_quoted = 0;
+    int any_quoted = 0;
 
-    expanded = expand_raw(w->parts ? w->parts->data : "", 0, &was_quoted);
+    for (wp = w->parts; wp; wp = wp->next) {
+      int part_quoted = 0;
+      char *expanded;
 
-    if (!was_quoted && !option_is_set(OPT_NOGLOB) && has_glob_chars(expanded)) {
+      switch (wp->type) {
+      case WPART_LITERAL:
+        expanded = expand_raw(wp->data, 0, &part_quoted);
+        break;
+      case WPART_SQUOTE:
+        expanded = sh_strdup(wp->data);
+        part_quoted = 1;
+        break;
+      case WPART_PARAM:
+        expanded = expand_param(wp->data, 0);
+        break;
+      case WPART_CMDSUB:
+        expanded = expand_cmdsub(wp->data);
+        break;
+      case WPART_ARITH:
+        expanded = expand_arith_expr(wp->data);
+        break;
+      default:
+        expanded = sh_strdup(wp->data ? wp->data : "");
+        break;
+      }
+
+      strbuf_addstr(&raw, expanded);
+      free(expanded);
+      if (part_quoted)
+        any_quoted = 1;
+    }
+
+    was_quoted = any_quoted;
+    char *expanded_word = strbuf_detach(&raw);
+
+    if (!was_quoted && !option_is_set(OPT_NOGLOB) &&
+        has_glob_chars(expanded_word)) {
       /* Field split then glob */
       int fc, gc;
-      char **fields = field_split(expanded, &fc);
+      char **fields = field_split(expanded_word, &fc);
       int fi;
-      free(expanded);
+      free(expanded_word);
 
       for (fi = 0; fi < fc; fi++) {
         char **globs = glob_expand(fields[fi], &gc);
@@ -740,9 +790,9 @@ char **expand_words(struct word *words, int *countp) {
     } else if (!was_quoted) {
       /* Field split only */
       int fc;
-      char **fields = field_split(expanded, &fc);
+      char **fields = field_split(expanded_word, &fc);
       int fi;
-      free(expanded);
+      free(expanded_word);
 
       for (fi = 0; fi < fc; fi++) {
         if (argc >= cap) {
@@ -758,7 +808,7 @@ char **expand_words(struct word *words, int *countp) {
         cap = cap ? cap * 2 : 16;
         argv = sh_realloc(argv, (cap + 1) * sizeof(char *));
       }
-      argv[argc++] = expanded;
+      argv[argc++] = expanded_word;
     }
   }
 

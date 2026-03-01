@@ -9,9 +9,9 @@
 typedef int (*builtin_fn)(int argc, char **argv);
 
 struct builtin_entry {
-	const char *name;
-	builtin_fn fn;
-	int special;  /* 1 = special builtin per POSIX */
+  const char *name;
+  builtin_fn fn;
+  int special; /* 1 = special builtin per POSIX */
 };
 
 /* Find a builtin by name. Returns NULL if not found. */
@@ -64,5 +64,6 @@ int builtin_ulimit(int argc, char **argv);
 int builtin_umask(int argc, char **argv);
 int builtin_unalias(int argc, char **argv);
 int builtin_wait(int argc, char **argv);
+int builtin_test(int argc, char **argv);
 
 #endif /* MEOWSH_BUILTIN_H */

@@ -87,7 +87,7 @@ static void setup_interactive(void) {
     if (setpgid(sh.shell_pgid, sh.shell_pgid) < 0) {
       sh.shell_pgid = getpgrp();
     }
-    
+
     /* Grab control of the terminal. */
     tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
 
@@ -144,7 +144,8 @@ static void source_profile(void) {
       }
     }
     {
-      int fd = open("/etc/profile", O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
+      int fd =
+          open("/etc/profile", O_RDONLY | O_NOFOLLOW); // flawfinder: ignore
       if (fd >= 0) {
         close(fd);
         input_push_file("/etc/profile");
@@ -183,7 +184,7 @@ static void path_prepend_entry(const char *entry) {
   if (!entry || !*entry)
     return;
 
-  elen = strlen(entry); // flawfinder: ignore
+  elen = strlen(entry);           // flawfinder: ignore
   plen = path ? strlen(path) : 0; // flawfinder: ignore
   new_path = sh_malloc(elen + (plen ? 1 + plen : 0) + 1);
   memcpy(new_path, entry, elen); // flawfinder: ignore
@@ -345,9 +346,10 @@ static char *build_starship_prompt(int status) {
       close(devnull);
     }
 
-    execlp("starship", "starship", "prompt", "--status", status_arg, // flawfinder: ignore
-           "--shlvl", shlvl_arg, "--terminal-width", width_arg,
-           "--shell", "sh", (char *)NULL);
+    execlp("starship", "starship", "prompt", "--status",
+           status_arg, // flawfinder: ignore
+           "--shlvl", shlvl_arg, "--terminal-width", width_arg, "--shell", "sh",
+           (char *)NULL);
     _exit(127);
   }
 
@@ -438,12 +440,15 @@ static char *with_meow_marker(const char *prompt) {
   out = sh_malloc(prefix_len + style_prefix_len + marker_len + suffix_len + 1);
   memcpy(out, prompt, prefix_len);                       // flawfinder: ignore
   memcpy(out + prefix_len, insert_at, style_prefix_len); // flawfinder: ignore
-  memcpy(out + prefix_len + style_prefix_len, marker, marker_len); // flawfinder: ignore
+  memcpy(out + prefix_len + style_prefix_len, marker,
+         marker_len); // flawfinder: ignore
   if (matched) {
-    memcpy(out + prefix_len + style_prefix_len + marker_len, p, // flawfinder: ignore
+    memcpy(out + prefix_len + style_prefix_len + marker_len,
+           p, // flawfinder: ignore
            suffix_len + 1);
   } else {
-    memcpy(out + prefix_len + style_prefix_len + marker_len, insert_at, // flawfinder: ignore
+    memcpy(out + prefix_len + style_prefix_len + marker_len,
+           insert_at, // flawfinder: ignore
            suffix_len + 1);
   }
   return out;
@@ -461,7 +466,9 @@ static void main_loop(void) {
     }
 
     lexer_clear_heredocs();
-    arena_free(&parse_arena);
+
+    struct arena_state state;
+    arena_checkpoint(&parse_arena, &state);
 
     if (sh.interactive) {
       ensure_default_ps1();
@@ -525,6 +532,7 @@ static void main_loop(void) {
     }
     struct node *tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
     if (!tree) {
+      arena_rollback(&parse_arena, &state);
       if (sh.parse_error) {
         sh.parse_error = 0;
         continue;
@@ -536,11 +544,11 @@ static void main_loop(void) {
           continue;
         }
         if (sh.interactive) {
-           /* DON'T EXIT unless it was a real EOF on a real terminal */
-           if (sh.input->type == INPUT_FD && isatty(sh.input->u.fd)) {
-              /* In interactive mode, lineedit_read returns NULL on Ctrl-D or error.
-               * We trust the input source stack. */
-           }
+          /* DON'T EXIT unless it was a real EOF on a real terminal */
+          if (sh.input->type == INPUT_FD && isatty(sh.input->u.fd)) {
+            /* In interactive mode, lineedit_read returns NULL on Ctrl-D or
+             * error. We trust the input source stack. */
+          }
         }
         break;
       }
@@ -549,6 +557,8 @@ static void main_loop(void) {
 
     if (!option_is_set(OPT_NOEXEC))
       exec_node(tree, 0);
+
+    arena_rollback(&parse_arena, &state);
   }
 
   free(starship_ps1);

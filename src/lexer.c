@@ -3,7 +3,9 @@
  * lexer.c — Hand-written POSIX tokenizer
  */
 
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 
 #include "lexer.h"
 #include "alias.h"
@@ -14,6 +16,7 @@
 #include "sh_error.h"
 #include "shell.h"
 
+#include <ctype.h>
 #include <string.h>
 
 static char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted);
@@ -113,18 +116,37 @@ const char *token_name(token_type_t t) {
         [TOK_LBRACE] = "{",
         [TOK_RBRACE] = "}",
         [TOK_BANG] = "!",
-        [TOK_NEWLINE] = "NEWLINE",
+        [TOK_NEWLINE] = "newline",
         [TOK_EOF] = "EOF",
     };
-    return names[t] ? names[t] : "???";
+    return names[t];
   }
-  return "???";
+  return "UNKNOWN";
+}
+
+static int nextchar(void) { return input_getc(); }
+
+static void pushback(int c) {
+  if (c >= 0)
+    input_ungetc(c);
+}
+
+static void skip_blanks(void) {
+  int c;
+  while ((c = nextchar()) >= 0 && (c == ' ' || c == '\t'))
+    ;
+  pushback(c);
+}
+
+static void continuation_prompt(void) {
+  if (sh.interactive) {
+    lexer_set_prompts(ps1_str, ps2_str);
+    sh.cur_prompt = ps2_str;
+  }
 }
 
 static token_type_t reserved_word(const char *s) {
-  int i;
-
-  for (i = 0; reserved_words[i].name; i++) {
+  for (int i = 0; reserved_words[i].name; i++) {
     if (strcmp(s, reserved_words[i].name) == 0)
       return reserved_words[i].type;
   }
@@ -132,164 +154,28 @@ static token_type_t reserved_word(const char *s) {
 }
 
 static struct token *make_token(token_type_t type, const char *value) {
-  struct token *t;
-
-  t = arena_alloc(&parse_arena, sizeof(*t));
-  t->type = type;
-  t->value = value ? arena_strdup(&parse_arena, value) : NULL;
-  t->lineno = sh.lineno;
-  return t;
+  struct token *tok = arena_alloc(&parse_arena, sizeof(*tok));
+  tok->type = type;
+  tok->value = value ? arena_strdup(&parse_arena, value) : NULL;
+  return tok;
 }
 
-static int nextchar(void) { return input_getc(); }
-
-static void pushback(int c) { input_ungetc(c); }
-
-/* Skip whitespace (spaces and tabs, not newlines) */
-static void skip_blanks(void) {
-  for (;;) {
-    int c = nextchar();
-    if (c != ' ' && c != '\t') {
-      pushback(c);
-      return;
-    }
-  }
-}
-
-/* Prompt for continuation line */
-static void continuation_prompt(void) {
-  if (sh.interactive) {
-    sh.cur_prompt = ps2_str;
-  }
-}
-
-/* Read heredoc body after newline */
-static void read_pending_heredocs(void) {
-  struct heredoc_pending *hd, *next;
-
-  for (hd = pending_heredocs; hd; hd = next) {
-    next = hd->next;
-    hd->redir->heredoc_body =
-        lexer_read_heredoc(hd->delim, hd->strip_tabs, hd->quoted);
-    hd->redir->heredoc_quoted = hd->quoted;
-    free(hd->delim);
-    free(hd);
-  }
-  pending_heredocs = NULL;
-}
-
-/* Queue a heredoc to be read after newline */
-void queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
-                   int quoted) {
-  struct heredoc_pending *hd, **pp;
-
-  hd = sh_malloc(sizeof(*hd));
-  hd->redir = redir;
-  hd->delim = sh_strdup(delim);
-  hd->strip_tabs = strip_tabs;
-  hd->quoted = quoted;
-  hd->next = NULL;
-
-  for (pp = &pending_heredocs; *pp; pp = &(*pp)->next)
-    ;
-  *pp = hd;
-}
-
-void lexer_clear_heredocs(void) {
-  struct heredoc_pending *hd, *next;
-
-  for (hd = pending_heredocs; hd; hd = next) {
-    next = hd->next;
-    free(hd->delim);
-    free(hd);
-  }
-  pending_heredocs = NULL;
-}
-
-static char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted) {
+/* Read a word token */
+static struct token *read_word(int c) {
   struct strbuf sb = STRBUF_INIT;
-  int c;
-  size_t dlen = strlen(delim); // flawfinder: ignore // flawfinder: ignore
-
-  (void)quoted; /* quoting affects expansion, not reading */
-
-  for (;;) {
-    struct strbuf line = STRBUF_INIT;
-
-    /* Read one line */
-    for (;;) {
-      c = nextchar();
-      if (c < 0) {
-        strbuf_free(&line);
-        goto done;
-      }
-      strbuf_addch(&line, (char)c);
-      if (c == '\n')
-        break;
-    }
-
-    /* Check if this line is the delimiter */
-    {
-      const char *lp = line.buf;
-      if (strip_tabs) {
-        while (*lp == '\t')
-          lp++;
-      }
-      /* Compare without trailing newline */
-      {
-        size_t llen = strlen(lp); // flawfinder: ignore // flawfinder: ignore
-        if (llen > 0 && lp[llen - 1] == '\n')
-          llen--;
-        if (llen == dlen && memcmp(lp, delim, dlen) == 0) {
-          strbuf_free(&line);
-          goto done;
-        }
-      }
-    }
-
-    strbuf_addstr(&sb, line.buf);
-    strbuf_free(&line);
-  }
-
-done:
-  if (sb.len == 0)
-    return arena_strdup(&parse_arena, "");
-  {
-    char *result = arena_strdup(&parse_arena, sb.buf);
-    strbuf_free(&sb);
-    return result;
-  }
-}
-
-/* Read a word token (handles quoting, expansions) */
-static struct token *read_word(int first_char) {
-  struct strbuf sb = STRBUF_INIT;
-  int c = first_char;
   int depth;
 
   for (;;) {
-    if (c < 0)
-      break;
-
     switch (c) {
+    case -1:
+      goto done;
+
     case '\\':
-      /* Backslash escape */
-      strbuf_addch(&sb, (char)c);
       c = nextchar();
-      if (c < 0)
-        break;
-      if (c == '\n') {
-        /* Line continuation */
-        sb.len--; /* remove the backslash */
-        if (sb.buf)
-          sb.buf[sb.len] = '\0';
-        continuation_prompt();
-        c = nextchar();
-        if (c < 0)
-          break;
-        continue;
+      if (c >= 0) {
+        strbuf_addch(&sb, (unsigned char)'\\');
+        strbuf_addch(&sb, (char)c);
       }
-      strbuf_addch(&sb, (char)c);
       break;
 
     case '\'':
@@ -323,21 +209,15 @@ static struct token *read_word(int first_char) {
           strbuf_addch(&sb, (char)c);
           if (nc >= 0)
             strbuf_addch(&sb, (char)nc);
-          if (nc == '\n') {
+          if (nc == '\n')
             continuation_prompt();
-            c = nextchar();
-            if (c < 0)
-              goto done;
-            continue;
-          }
-          c = nextchar();
-          if (c < 0)
-            goto done;
           continue;
         }
-        strbuf_addch(&sb, (char)c);
-        if (c == '"')
+        if (c == '"') {
+          strbuf_addch(&sb, (char)c);
           break;
+        }
+        strbuf_addch(&sb, (char)c);
         if (c == '`') {
           /* Backtick inside dquote */
           for (;;) {
@@ -358,32 +238,25 @@ static struct token *read_word(int first_char) {
         if (c == '$') {
           int nc = nextchar();
           if (nc == '(') {
-            strbuf_addch(&sb, (char)nc);
-            /* Check for $(( )) */
-            {
-              int nnc = nextchar();
-              if (nnc == '(') {
-                strbuf_addch(&sb, (char)nnc);
-                /* Arithmetic inside dquote */
-                depth = 2;
-                while (depth > 0) {
-                  c = nextchar();
-                  if (c < 0)
-                    break;
-                  strbuf_addch(&sb, (char)c);
-                  if (c == '(')
-                    depth++;
-                  else if (c == ')')
-                    depth--;
-                }
+            int nnc = nextchar();
+            if (nnc == '(') {
+              strbuf_addch(&sb, (char)nc);
+              strbuf_addch(&sb, (char)nnc);
+              depth = 2;
+              while (depth > 0) {
                 c = nextchar();
                 if (c < 0)
-                  goto done;
-                continue;
+                  break;
+                strbuf_addch(&sb, (char)c);
+                if (c == '(')
+                  depth++;
+                else if (c == ')')
+                  depth--;
               }
-              pushback(nnc);
+              continue;
             }
-            /* Command substitution inside dquote */
+            pushback(nnc);
+            strbuf_addch(&sb, (unsigned char)'(');
             depth = 1;
             while (depth > 0) {
               c = nextchar();
@@ -403,11 +276,23 @@ static struct token *read_word(int first_char) {
                   if (c == '\'')
                     break;
                 }
+              } else if (c == '"') {
+                for (;;) {
+                  c = nextchar();
+                  if (c < 0)
+                    break;
+                  strbuf_addch(&sb, (char)c);
+                  if (c == '\\') {
+                    c = nextchar();
+                    if (c >= 0)
+                      strbuf_addch(&sb, (char)c);
+                    continue;
+                  }
+                  if (c == '"')
+                    break;
+                }
               }
             }
-            c = nextchar();
-            if (c < 0)
-              goto done;
             continue;
           } else if (nc == '{') {
             strbuf_addch(&sb, (char)nc);
@@ -441,9 +326,6 @@ static struct token *read_word(int first_char) {
           c = nextchar();
           if (c >= 0)
             strbuf_addch(&sb, (char)c);
-          c = nextchar();
-          if (c < 0)
-            break;
           continue;
         }
         if (c == '`')
@@ -455,7 +337,6 @@ static struct token *read_word(int first_char) {
       strbuf_addch(&sb, (char)c);
       c = nextchar();
       if (c == '(') {
-        strbuf_addch(&sb, (char)c);
         /* Check for $(( )) arithmetic */
         {
           int nc = nextchar();
@@ -477,6 +358,7 @@ static struct token *read_word(int first_char) {
           }
           pushback(nc);
         }
+        strbuf_addch(&sb, (unsigned char)'(');
         /* Command substitution $() */
         depth = 1;
         while (depth > 0) {
@@ -644,14 +526,37 @@ static struct token *read_operator(int c) {
   }
 }
 
+static void read_pending_heredocs(void) {
+  struct heredoc_pending *h, *next;
+
+  for (h = pending_heredocs; h; h = next) {
+    next = h->next;
+    h->redir->heredoc_body =
+        lexer_read_heredoc(h->delim, h->strip_tabs, h->quoted);
+    free(h->delim);
+    free(h);
+  }
+  pending_heredocs = NULL;
+}
+
 static struct token *lexer_read_token(void) {
   int c;
 
   skip_blanks();
+restart:
   c = nextchar();
 
   if (c < 0)
     return make_token(TOK_EOF, NULL);
+
+  if (c == '\\') {
+    int nc = nextchar();
+    if (nc == '\n') {
+      skip_blanks();
+      goto restart;
+    }
+    pushback(nc);
+  }
 
   /* Comments */
   if (c == '#') {
@@ -677,13 +582,11 @@ static struct token *lexer_read_token(void) {
   /* Operators */
   if (c == '|' || c == '&' || c == ';' || c == '<' || c == '>' || c == '(' ||
       c == ')') {
-    /* Check for IO_NUMBER: digit(s) before < or > */
-    /* This is handled by the parser after getting a WORD */
     at_line_start = 0;
     return read_operator(c);
   }
 
-  /* IO_NUMBER: check if this is a digit followed by < or > */
+  /* IO_NUMBER */
   if (isdigit((unsigned char)c)) {
     struct strbuf digits = STRBUF_INIT;
     strbuf_addch(&digits, (char)c);
@@ -692,7 +595,6 @@ static struct token *lexer_read_token(void) {
       if (nc >= 0 && isdigit((unsigned char)nc)) {
         strbuf_addch(&digits, (char)nc);
       } else if (nc == '<' || nc == '>') {
-        /* This is an IO_NUMBER */
         const char *val = arena_strdup(&parse_arena, digits.buf);
         struct token *tok;
         strbuf_free(&digits);
@@ -701,11 +603,8 @@ static struct token *lexer_read_token(void) {
         at_line_start = 0;
         return tok;
       } else {
-        /* Not IO_NUMBER, push everything back */
         if (nc >= 0)
           pushback(nc);
-
-        /* Push back all digits except the first one */
         for (size_t i = digits.len - 1; i >= 1; i--) {
           pushback((unsigned char)digits.buf[i]);
         }
@@ -721,26 +620,18 @@ read_as_word:
   return read_word(c);
 }
 
-/* Check if a WORD token should be recognized as a reserved word.
- * The parser will call this when a reserved word is valid. */
 static struct token *classify_word(struct token *tok) {
   token_type_t rw;
-
   if (tok->type != TOK_WORD)
     return tok;
-
   rw = reserved_word(tok->value);
   if (rw != TOK_WORD)
     tok->type = rw;
-
   return tok;
 }
 
-/* Try alias expansion on a word token.
- * Returns 1 if alias was expanded (token replaced). */
 static int try_alias(const struct token *tok) {
   const char *val;
-
   if (!alias_enabled)
     return 0;
   if (tok->type != TOK_WORD && tok->type < TOK_IF)
@@ -751,12 +642,9 @@ static int try_alias(const struct token *tok) {
     return 0;
   if (alias_is_inuse(tok->value))
     return 0;
-
   val = alias_get(tok->value);
   if (!val)
     return 0;
-
-  /* Push alias expansion as a new input source */
   alias_mark_inuse(tok->value, 1);
   input_push_string(val);
   return 1;
@@ -764,38 +652,28 @@ static int try_alias(const struct token *tok) {
 
 struct token *lexer_next(void) {
   struct token *tok;
-
   if (peeked) {
     tok = peeked;
     peeked = NULL;
     return tok;
   }
-
   if (at_line_start)
     sh.cur_prompt = ps1_str;
-
   tok = lexer_read_token();
-
-  /* Try alias expansion at command position */
   if (tok->type == TOK_WORD && alias_enabled && is_command_pos) {
-    if (try_alias(tok)) {
+    if (try_alias(tok))
       tok = lexer_read_token();
-    }
   }
-
-  /* Update is_command_pos for next token */
-  if (tok->type == TOK_WORD || tok->type == TOK_ASSIGNMENT || tok->type == TOK_IO_NUMBER) {
+  if (tok->type == TOK_WORD || tok->type == TOK_ASSIGNMENT ||
+      tok->type == TOK_IO_NUMBER) {
     is_command_pos = 0;
-  } else if (tok->type == TOK_PIPE || tok->type == TOK_AND_IF || 
-             tok->type == TOK_OR_IF || tok->type == TOK_SEMI || 
+  } else if (tok->type == TOK_PIPE || tok->type == TOK_AND_IF ||
+             tok->type == TOK_OR_IF || tok->type == TOK_SEMI ||
              tok->type == TOK_AMP || tok->type == TOK_NEWLINE ||
              tok->type == TOK_LPAREN || tok->type == TOK_BANG) {
     is_command_pos = 1;
   }
-
-  /* Classify reserved words */
   tok = classify_word(tok);
-
   return tok;
 }
 
@@ -805,3 +683,68 @@ struct token *lexer_peek(void) {
   return peeked;
 }
 
+void lexer_clear_heredocs(void) {
+  struct heredoc_pending *h, *next;
+  for (h = pending_heredocs; h; h = next) {
+    next = h->next;
+    free(h->delim);
+    free(h);
+  }
+  pending_heredocs = NULL;
+}
+
+void queue_heredoc(struct redirect *redir, const char *delim, int strip_tabs,
+                   int quoted) {
+  struct heredoc_pending *h = malloc(sizeof(*h));
+  h->redir = redir;
+  h->delim = strdup(delim);
+  h->strip_tabs = strip_tabs;
+  h->quoted = quoted;
+  h->next = NULL;
+  if (!pending_heredocs) {
+    pending_heredocs = h;
+  } else {
+    struct heredoc_pending *p = pending_heredocs;
+    while (p->next)
+      p = p->next;
+    p->next = h;
+  }
+}
+
+static int lexer_gets(char *buf, size_t size) {
+  size_t i = 0;
+  int c;
+  while (i < size - 1) {
+    c = nextchar();
+    if (c < 0) {
+      if (i == 0)
+        return 0;
+      break;
+    }
+    buf[i++] = (char)c;
+    if (c == '\n')
+      break;
+  }
+  buf[i] = '\0';
+  return (int)i;
+}
+
+static char *lexer_read_heredoc(const char *delim, int strip_tabs, int quoted) {
+  struct strbuf sb = STRBUF_INIT;
+  char line[4096];
+  size_t dlen = strlen(delim);
+  while (lexer_gets(line, sizeof(line))) {
+    char *p = line;
+    if (strip_tabs) {
+      while (*p == '\t')
+        p++;
+    }
+    if (strncmp(p, delim, dlen) == 0 && (p[dlen] == '\n' || p[dlen] == '\0')) {
+      break;
+    }
+    strbuf_addstr(&sb, line);
+  }
+  char *res = sh_strdup(sb.buf);
+  strbuf_free(&sb);
+  return res;
+}
