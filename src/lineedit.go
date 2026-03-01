@@ -20,6 +20,12 @@ type LineEditor struct {
 	origTermios syscall.Termios
 	rawMode     bool
 	reader      *bufio.Reader
+
+	lastMatches []string
+	matchIdx    int
+	matchDir    string
+	lastTabPos  int
+	prefixLen   int
 }
 
 func NewLineEditor() *LineEditor {
@@ -27,6 +33,7 @@ func NewLineEditor() *LineEditor {
 		history:    []string{},
 		historyIdx: -1,
 		reader:     bufio.NewReader(os.Stdin),
+		matchIdx:   -1,
 	}
 }
 
@@ -75,6 +82,7 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 	le.prompt = prompt
 	le.line = []rune{}
 	le.pos = 0
+	le.resetCompletion()
 	
 	if sh.Interactive && isatty(os.Stdin.Fd()) {
 		if err := le.enableRawMode(); err != nil {
@@ -101,6 +109,10 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 
 		for i := 0; i < n; i++ {
 			b := buf[i]
+
+			if b != 9 {
+				le.resetCompletion()
+			}
 
 			switch b {
 			case 3: // Ctrl-C
@@ -179,6 +191,12 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 	}
 }
 
+func (le *LineEditor) resetCompletion() {
+	le.lastMatches = nil
+	le.matchIdx = -1
+	le.lastTabPos = -1
+}
+
 func (le *LineEditor) promptWidth() int {
 	// Crude estimate: strip ANSI codes
 	w := 0
@@ -213,6 +231,30 @@ func (le *LineEditor) readLineCooked() (string, error) {
 }
 
 func (le *LineEditor) handleTab() {
+	if len(le.lastMatches) > 0 && le.lastTabPos == le.pos {
+		// Cycle
+		currentMatch := le.lastMatches[le.matchIdx]
+		fullPath := filepath.Join(le.matchDir, currentMatch)
+		suffix := " "
+		if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+			suffix = "/"
+		}
+		toDelete := len([]rune(currentMatch[le.prefixLen:] + suffix))
+		le.line = append(le.line[:le.pos-toDelete], le.line[le.pos:]...)
+		le.pos -= toDelete
+
+		le.matchIdx = (le.matchIdx + 1) % len(le.lastMatches)
+		nextMatch := le.lastMatches[le.matchIdx]
+		fullPath = filepath.Join(le.matchDir, nextMatch)
+		suffix = " "
+		if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+			suffix = "/"
+		}
+		le.insertAtCursor(nextMatch[le.prefixLen:] + suffix)
+		le.lastTabPos = le.pos
+		return
+	}
+
 	start := le.pos
 	for start > 0 && le.line[start-1] != ' ' {
 		start--
@@ -263,14 +305,22 @@ func (le *LineEditor) handleTab() {
 		if len(cp) > len(prefix) {
 			le.insertAtCursor(cp[len(prefix):])
 		} else {
-			// No progress possible, list matches
-			fmt.Print("\r\n")
-			for _, m := range matches {
-				fmt.Printf("%s  ", m)
+			// Start cycling
+			le.lastMatches = matches
+			le.matchIdx = 0
+			le.matchDir = dir
+			le.prefixLen = len(prefix)
+
+			nextMatch := matches[0]
+			fullPath := filepath.Join(dir, nextMatch)
+			suffix := " "
+			if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+				suffix = "/"
 			}
-			fmt.Print("\r\n")
+			le.insertAtCursor(nextMatch[len(prefix):] + suffix)
 		}
 	}
+	le.lastTabPos = le.pos
 }
 
 func (le *LineEditor) insertAtCursor(s string) {
