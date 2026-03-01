@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -217,36 +218,67 @@ func (le *LineEditor) handleTab() {
 		start--
 	}
 	word := string(le.line[start:le.pos])
-	
+
+	dir := "."
+	prefix := word
+	if i := strings.LastIndex(word, "/"); i != -1 {
+		dir = word[:i+1]
+		prefix = word[i+1:]
+	}
+
 	matches := []string{}
-	files, err := os.ReadDir(".")
+	files, err := os.ReadDir(dir)
 	if err == nil {
 		for _, f := range files {
-			if strings.HasPrefix(f.Name(), word) {
+			if strings.HasPrefix(f.Name(), prefix) {
 				matches = append(matches, f.Name())
 			}
 		}
 	}
 
+	if len(matches) == 0 {
+		return
+	}
+
 	if len(matches) == 1 {
-		completed := matches[0][len(word):]
-		if info, err := os.Stat(matches[0]); err == nil && info.IsDir() {
+		fullPath := filepath.Join(dir, matches[0])
+		completed := matches[0][len(prefix):]
+		if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
 			completed += "/"
 		} else {
 			completed += " "
 		}
-		
-		newP := make([]rune, len(le.line)+len(completed))
-		copy(newP, le.line[:le.pos])
-		copy(newP[le.pos:], []rune(completed))
-		copy(newP[le.pos+len(completed):], le.line[le.pos:])
-		le.line = newP
-		le.pos += len(completed)
-	} else if len(matches) > 1 {
-		fmt.Print("\r\n")
-		for _, m := range matches {
-			fmt.Printf("%s  ", m)
+		le.insertAtCursor(completed)
+	} else {
+		// Longest common prefix
+		cp := matches[0]
+		for _, m := range matches[1:] {
+			i := 0
+			for i < len(cp) && i < len(m) && cp[i] == m[i] {
+				i++
+			}
+			cp = cp[:i]
 		}
-		fmt.Print("\r\n")
+
+		if len(cp) > len(prefix) {
+			le.insertAtCursor(cp[len(prefix):])
+		} else {
+			// No progress possible, list matches
+			fmt.Print("\r\n")
+			for _, m := range matches {
+				fmt.Printf("%s  ", m)
+			}
+			fmt.Print("\r\n")
+		}
 	}
+}
+
+func (le *LineEditor) insertAtCursor(s string) {
+	runes := []rune(s)
+	newP := make([]rune, len(le.line)+len(runes))
+	copy(newP, le.line[:le.pos])
+	copy(newP[le.pos:], runes)
+	copy(newP[le.pos+len(runes):], le.line[le.pos:])
+	le.line = newP
+	le.pos += len(runes)
 }
