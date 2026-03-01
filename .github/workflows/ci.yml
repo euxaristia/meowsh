@@ -25,7 +25,7 @@ jobs:
 
     - name: Run cppcheck
       run: |
-        cppcheck --enable=all \
+        cppcheck --enable=all --check-level=exhaustive \
           --suppress=missingIncludeSystem \
           --suppress=unusedFunction \
           --suppress=constVariable \
@@ -34,7 +34,6 @@ jobs:
           --suppress=variableScope \
           --suppress=knownConditionTrueFalse \
           --suppress=unusedStructMember \
-          --suppress=shadowVariable \
           --suppress=staticFunction \
           --error-exitcode=1 src/
 
