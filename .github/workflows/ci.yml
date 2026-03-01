@@ -21,7 +21,7 @@ jobs:
 
     - name: Run flawfinder
       run: |
-        flawfinder -m 3 --context src/
+        flawfinder -m 1 --error-level 1 src/
 
     - name: Run cppcheck
       run: |
