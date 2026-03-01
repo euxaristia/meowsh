@@ -366,6 +366,55 @@ func builtinTest(args []string) int {
 				return 0
 			}
 			return 1
+		case "-b":
+			if info, err := os.Stat(s); err == nil && info.Mode()&os.ModeDevice != 0 && info.Mode()&os.ModeCharDevice == 0 {
+				return 0
+			}
+			return 1
+		case "-c":
+			if info, err := os.Stat(s); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+				return 0
+			}
+			return 1
+		case "-p":
+			if info, err := os.Stat(s); err == nil && info.Mode()&os.ModeNamedPipe != 0 {
+				return 0
+			}
+			return 1
+		case "-S":
+			if info, err := os.Stat(s); err == nil && info.Mode()&os.ModeSocket != 0 {
+				return 0
+			}
+			return 1
+		case "-L", "-h":
+			if info, err := os.Lstat(s); err == nil && info.Mode()&os.ModeSymlink != 0 {
+				return 0
+			}
+			return 1
+		case "-s":
+			if info, err := os.Stat(s); err == nil && info.Size() > 0 {
+				return 0
+			}
+			return 1
+		case "-r":
+			if f, err := os.Open(s); err == nil {
+				f.Close()
+				return 0
+			}
+			return 1
+		case "-w":
+			if f, err := os.OpenFile(s, os.O_WRONLY, 0); err == nil {
+				f.Close()
+				return 0
+			}
+			return 1
+		case "-x":
+			if info, err := os.Stat(s); err == nil {
+				if info.Mode().Perm()&0111 != 0 {
+					return 0
+				}
+			}
+			return 1
 		}
 		return 1
 	}
