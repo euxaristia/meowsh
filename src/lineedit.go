@@ -320,16 +320,17 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 					char := rune(b)
 					if le.pos == len(le.line) {
 						le.line = append(le.line, char)
-						le.refreshLine(true) // Always refresh to be safe
+						le.pos++
+						le.refreshLine(true)
 					} else {
 						newP := make([]rune, len(le.line)+1)
 						copy(newP, le.line[:le.pos])
 						newP[le.pos] = char
 						copy(newP[le.pos+1:], le.line[le.pos:])
 						le.line = newP
+						le.pos++
 						le.refreshLine(true)
 					}
-					le.pos++
 				}
 			}
 		}
