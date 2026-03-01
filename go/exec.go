@@ -37,9 +37,23 @@ func execNode(node *ASTNode) int {
 	case "function":
 		return execFunction(node)
 	case "case":
-		return 0
+		return execCase(node)
 	}
 
+	return 0
+}
+
+func execCase(node *ASTNode) int {
+	word := expandAll(node.Value)
+	for _, item := range node.Cases {
+		matched, _ := filepath.Match(item.Pattern, word)
+		if matched {
+			if item.Body != nil {
+				return execNode(item.Body)
+			}
+			return 0
+		}
+	}
 	return 0
 }
 

@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -18,6 +16,13 @@ func expandCommandSubstitution(s string) string {
 	i := 0
 
 	for i < len(s) {
+		if i+2 < len(s) && s[i] == '$' && s[i+1] == '(' && s[i+2] == '(' {
+			result.WriteByte('$')
+			result.WriteByte('(')
+			result.WriteByte('(')
+			i += 3
+			continue
+		}
 		if i+1 < len(s) && s[i] == '$' && s[i+1] == '(' {
 			end := findMatchingParen(s, i+1)
 			if end > i+1 {
@@ -29,10 +34,10 @@ func expandCommandSubstitution(s string) string {
 			}
 		}
 
-		if i+1 < len(s) && s[i] == '$' && s[i+1] == '`' {
+		if s[i] == '`' {
 			end := findMatchingBacktick(s, i+1)
-			if end > i+1 {
-				inner := s[i+2 : end]
+			if end > i {
+				inner := s[i+1 : end]
 				out := runCommandOutput(inner)
 				result.WriteString(out)
 				i = end + 1
@@ -40,155 +45,50 @@ func expandCommandSubstitution(s string) string {
 			}
 		}
 
-		if i+2 < len(s) && s[i] == '$' && s[i+1] == '(' && s[i+2] == '(' {
-			end := findDoubleParen(s, i+2)
-			if end > i+2 {
-				inner := s[i+3 : end]
-				out := evaluateArithmetic(inner)
-				result.WriteString(out)
-				i = end + 2
-				continue
-			}
-		}
-
 		result.WriteByte(s[i])
 		i++
 	}
-
 	return result.String()
 }
 
-func findDoubleParen(s string, start int) int {
-	depth := 0
-	for i := start; i < len(s); i++ {
-		if i+1 < len(s) && s[i] == '(' && s[i+1] == '(' {
-			depth++
-		} else if i+1 < len(s) && s[i] == ')' && s[i+1] == ')' {
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func evaluateArithmetic(s string) string {
-	s = strings.TrimSpace(s)
-
-	re := regexp.MustCompile(`(\d+)\s*\*\s*(\d+)`)
-	s = re.ReplaceAllStringFunc(s, func(m string) string {
-		parts := regexp.MustCompile(`\d+`).FindAllString(m, -1)
-		a, _ := strconv.Atoi(parts[0])
-		b, _ := strconv.Atoi(parts[1])
-		return strconv.Itoa(a * b)
-	})
-
-	re = regexp.MustCompile(`(\d+)\s*\+\s*(\d+)`)
-	s = re.ReplaceAllStringFunc(s, func(m string) string {
-		parts := regexp.MustCompile(`\d+`).FindAllString(m, -1)
-		a, _ := strconv.Atoi(parts[0])
-		b, _ := strconv.Atoi(parts[1])
-		return strconv.Itoa(a + b)
-	})
-
-	re = regexp.MustCompile(`(\d+)\s*-\s*(\d+)`)
-	s = re.ReplaceAllStringFunc(s, func(m string) string {
-		parts := regexp.MustCompile(`\d+`).FindAllString(m, -1)
-		a, _ := strconv.Atoi(parts[0])
-		b, _ := strconv.Atoi(parts[1])
-		return strconv.Itoa(a - b)
-	})
-
-	re = regexp.MustCompile(`(\d+)\s*/\s*(\d+)`)
-	s = re.ReplaceAllStringFunc(s, func(m string) string {
-		parts := regexp.MustCompile(`\d+`).FindAllString(m, -1)
-		a, _ := strconv.Atoi(parts[0])
-		b, _ := strconv.Atoi(parts[1])
-		if b != 0 {
-			return strconv.Itoa(a / b)
-		}
-		return "0"
-	})
-
-	num, err := strconv.Atoi(strings.TrimSpace(s))
-	if err == nil {
-		return strconv.Itoa(num)
-	}
-
-	return "0"
-}
-
 func runCommandOutput(cmd string) string {
-	cmd = strings.TrimSpace(cmd)
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
+	c := exec.Command("sh", "-c", cmd)
+	out, err := c.Output()
+	if err != nil {
 		return ""
 	}
-
-	proc := exec.Command(parts[0], parts[1:]...)
-	var out bytes.Buffer
-	proc.Stdout = &out
-	proc.Run()
-	return strings.TrimSpace(out.String())
-}
-
-func expandGlob(s string) string {
-	if strings.ContainsAny(s, "*?[]") && !strings.HasPrefix(s, "'") {
-		matches, err := filepath.Glob(s)
-		if err == nil && len(matches) > 0 {
-			return strings.Join(matches, " ")
-		}
-	}
-	return s
+	return strings.TrimRight(string(out), "\n")
 }
 
 func expandVariable(s string) string {
-	if len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\'' {
-		return s[1 : len(s)-1]
-	}
-
-	doubleQuoted := false
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		doubleQuoted = true
-		s = s[1 : len(s)-1]
-	}
-
 	var result strings.Builder
 	i := 0
-
 	for i < len(s) {
-		if s[i] == '$' && i+1 < len(s) {
-			nextCh := s[i+1]
-			if nextCh == '{' {
-				end := strings.Index(s[i+2:], "}")
-				if end >= 0 {
-					varExpr := s[i+2 : i+2+end]
-					result.WriteString(expandVarExpr(varExpr))
-					i = i + 3 + end
+		if i+2 < len(s) && s[i] == '$' && s[i+1] == '(' && s[i+2] == '(' {
+			result.WriteString("$")
+			i++
+			continue
+		}
+		if s[i] == '$' {
+			if i+1 < len(s) && s[i+1] == '{' {
+				end := strings.Index(s[i:], "}")
+				if end != -1 {
+					expr := s[i+2 : i+end]
+					result.WriteString(expandVarExpr(expr))
+					i += end + 1
 					continue
 				}
-			} else if nextCh == '$' {
-				result.WriteString(fmt.Sprintf("%d", sh.ShellPid))
-				i += 2
-				continue
-			} else if nextCh == '?' {
-				result.WriteString(fmt.Sprintf("%d", sh.LastStatus))
-				i += 2
-				continue
-			} else if nextCh == '!' {
-				result.WriteString(fmt.Sprintf("%d", sh.LastBgPid))
-				i += 2
-				continue
-			} else if unicode.IsLetter(rune(nextCh)) || unicode.IsDigit(rune(nextCh)) || nextCh == '_' {
-				end := i + 1
-				for end < len(s) && (unicode.IsLetter(rune(s[end])) || unicode.IsDigit(rune(s[end])) || s[end] == '_') {
-					end++
+			} else {
+				j := i + 1
+				for j < len(s) && (unicode.IsLetter(rune(s[j])) || unicode.IsDigit(rune(s[j])) || s[j] == '_' || s[j] == '?' || s[j] == '$' || s[j] == '!' || s[j] == '#' || s[j] == '@' || s[j] == '*') {
+					j++
 				}
-				varName := s[i+1 : end]
-				result.WriteString(varGetSimple(varName))
-				i = end
-				continue
+				if j > i+1 {
+					name := s[i+1 : j]
+					result.WriteString(varGet(name))
+					i = j
+					continue
+				}
 			}
 		}
 		result.WriteByte(s[i])
@@ -196,10 +96,21 @@ func expandVariable(s string) string {
 	}
 
 	res := result.String()
-	if !doubleQuoted {
+	if !sh.Interactive || (sh.Opts&OPT_NOGLOB == 0) {
 		res = expandGlob(res)
 	}
 	return res
+}
+
+func expandGlob(s string) string {
+	if !strings.ContainsAny(s, "*?[]") {
+		return s
+	}
+	matches, err := filepath.Glob(s)
+	if err == nil && len(matches) > 0 {
+		return strings.Join(matches, " ")
+	}
+	return s
 }
 
 func expandVarExpr(expr string) string {
@@ -287,20 +198,6 @@ func expandVarExpr(expr string) string {
 }
 
 func varGetSimple(name string) string {
-	switch name {
-	case "$":
-		return fmt.Sprintf("%d", sh.ShellPid)
-	case "?":
-		return fmt.Sprintf("%d", sh.LastStatus)
-	case "!":
-		return fmt.Sprintf("%d", sh.LastBgPid)
-	case "0":
-		return sh.Argv1()
-	case "#":
-		return fmt.Sprintf("%d", len(sh.PosParams))
-	case "@", "*":
-		return strings.Join(sh.PosParams, " ")
-	}
 	if v, ok := sh.Vars[name]; ok {
 		return v.Value
 	}
@@ -337,13 +234,134 @@ func expandTilde(s string) string {
 	return s
 }
 
+func expandArithmetic(s string) string {
+	if strings.HasPrefix(s, "$(") && strings.HasSuffix(s, ")") {
+		inner := s[2 : len(s)-1]
+		if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") {
+			val := evalArithmetic(inner[1 : len(inner)-1])
+			return strconv.Itoa(val)
+		}
+	}
+
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+2 < len(s) && s[i] == '$' && s[i+1] == '(' && s[i+2] == '(' {
+			end := findMatchingDoubleParen(s, i+1)
+			if end != -1 {
+				inner := s[i+3 : end-1]
+				val := evalArithmetic(inner)
+				result.WriteString(strconv.Itoa(val))
+				i = end + 1
+				continue
+			}
+		}
+		result.WriteByte(s[i])
+		i++
+	}
+	return result.String()
+}
+
+func findMatchingDoubleParen(s string, start int) int {
+	depth := 0
+	for i := start; i < len(s)-1; i++ {
+		if s[i] == '(' && s[i+1] == '(' {
+			depth++
+			i++
+		} else if s[i] == ')' && s[i+1] == ')' {
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+			i++
+		}
+	}
+	return -1
+}
+
+func evalArithmetic(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+
+	// Resolve variables inside math (handle both $VAR and VAR)
+	if strings.Contains(s, "$") {
+		s = expandVariable(s)
+	}
+
+	if strings.Contains(s, "+") {
+		parts := strings.SplitN(s, "+", 2)
+		return evalArithmetic(parts[0]) + evalArithmetic(parts[1])
+	}
+	if strings.Contains(s, "-") {
+		parts := strings.SplitN(s, "-", 2)
+		return evalArithmetic(parts[0]) - evalArithmetic(parts[1])
+	}
+	if strings.Contains(s, "*") {
+		parts := strings.SplitN(s, "*", 2)
+		return evalArithmetic(parts[0]) * evalArithmetic(parts[1])
+	}
+	if strings.Contains(s, "/") {
+		parts := strings.SplitN(s, "/", 2)
+		b := evalArithmetic(parts[1])
+		if b == 0 {
+			return 0
+		}
+		return evalArithmetic(parts[0]) / b
+	}
+
+	s = strings.TrimSpace(s)
+	// If it's not a number, try looking it up as a variable
+	if val, err := strconv.Atoi(s); err == nil {
+		return val
+	}
+	
+	v := varGet(s)
+	if v != "" {
+		iv, _ := strconv.Atoi(v)
+		return iv
+	}
+
+	return 0
+}
+
+func removeQuotes(s string) string {
+	var result strings.Builder
+	i := 0
+	inDouble := false
+	inSingle := false
+	for i < len(s) {
+		c := s[i]
+		if c == '\\' && !inSingle {
+			if i+1 < len(s) {
+				result.WriteByte(s[i+1])
+				i += 2
+				continue
+			}
+		}
+		if c == '"' && !inSingle {
+			inDouble = !inDouble
+			i++
+			continue
+		}
+		if c == '\'' && !inDouble {
+			inSingle = !inSingle
+			i++
+			continue
+		}
+		result.WriteByte(c)
+		i++
+	}
+	return result.String()
+}
+
 func expandAll(s string) string {
-	// 0. Tilde expansion
+	s = expandArithmetic(s)
 	s = expandTilde(s)
-	// 1. Command substitution
 	s = expandCommandSubstitution(s)
-	// 2. Variable expansion & Globbing & Quote removal (handled inside expandVariable for now)
 	s = expandVariable(s)
+	s = removeQuotes(s)
 	return s
 }
 

@@ -472,6 +472,7 @@ func (l *Lexer) readWord(r rune) Token {
 				nr := l.NextRune()
 				if nr == '(' {
 					sb.WriteRune('(')
+					sb.WriteRune('(')
 					depth = 2
 					for depth > 0 {
 						r = l.NextRune()

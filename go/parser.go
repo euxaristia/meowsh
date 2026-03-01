@@ -215,14 +215,49 @@ func (p *Parser) parseFor() *ASTNode {
 func (p *Parser) parseCase() *ASTNode {
 	p.lexer.NextToken() // case
 	word := p.lexer.NextToken().Value
+	p.skipNewlines()
 	p.expectValue("in")
+	p.skipNewlines()
 
-	// Complex case parsing omitted for brevity in prototype parity
-	for p.lexer.PeekToken().Value != "esac" && p.lexer.PeekToken().Type != TOK_EOF {
+	node := &ASTNode{Type: "case", Value: word, Cases: []CaseItem{}}
+
+	for {
+		tok := p.lexer.PeekToken()
+		if tok.Value == "esac" || tok.Type == TOK_EOF {
+			break
+		}
+
+		if tok.Type == TOK_NEWLINE {
+			p.lexer.NextToken()
+			continue
+		}
+
+		// (pattern) or pattern)
+		if tok.Value == "(" {
+			p.lexer.NextToken()
+		}
+
+		pattern := p.lexer.NextToken().Value
+		p.expectValue(")")
+
+		body, _ := p.parseCommandList()
+		node.Cases = append(node.Cases, CaseItem{Pattern: pattern, Body: body})
+
+		tok = p.lexer.PeekToken()
+		if tok.Value == ";;" {
+			p.lexer.NextToken()
+		}
+		p.skipNewlines()
+	}
+
+	p.expectValue("esac")
+	return node
+}
+
+func (p *Parser) skipNewlines() {
+	for p.lexer.PeekToken().Type == TOK_NEWLINE {
 		p.lexer.NextToken()
 	}
-	p.expectValue("esac")
-	return &ASTNode{Type: "case", Value: word}
 }
 
 func (p *Parser) expect(t TokenType, val string) {
