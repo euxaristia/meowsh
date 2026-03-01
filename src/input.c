@@ -118,8 +118,6 @@ static int input_refill(struct input_source *is) {
         is->eof = 1;
         return -1;
       }
-      /* Reset prompt to PS1 for next time unless lexer changes it */
-      sh.cur_prompt = sh.ps1;
       free(is->buf);
       is->buf = line;
       is->buflen = strlen(line); // flawfinder: ignore

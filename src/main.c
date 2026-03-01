@@ -548,38 +548,18 @@ static void main_loop(void) {
         ps2 = cfg_ps2 && *cfg_ps2 ? cfg_ps2 : "🐱";
       }
       sh.ps2 = ps2;
-      sh.cur_prompt = sh.ps1;
     } else {
       ps1_buf[0] = '\0';
       sh.ps1 = NULL;
       sh.ps2 = NULL;
-      sh.cur_prompt = NULL;
     }
 
-    if (sh.interactive)
+    if (sh.interactive) {
+      lexer_set_prompts(sh.ps1, sh.ps2);
       input_clear_unget();
+    }
     tree = parse_command(sh.interactive ? sh.ps1 : NULL, sh.ps2);
     if (!tree) {
-      if (sh.interactive) {
-        const char *last = lineedit_last_line();
-        if (last && *last) {
-          size_t n = strlen(last); // flawfinder: ignore
-          char *retry = sh_malloc(n + 2);
-          memcpy(retry, last, n);
-          retry[n] = '\n';
-          retry[n + 1] = '\0';
-          input_push_string(retry);
-          free(retry);
-          input_clear_unget();
-          tree = parse_command(NULL, sh.ps2);
-          input_pop();
-          if (tree) {
-            if (!option_is_set(OPT_NOEXEC))
-              exec_node(tree, 0);
-            continue;
-          }
-        }
-      }
       main_debugf("parse_command -> NULL interactive=%d eof=%d", sh.interactive,
                   (sh.input ? sh.input->eof : -1));
       /* Empty line / interrupted line / EOF. Avoid probing input in interactive

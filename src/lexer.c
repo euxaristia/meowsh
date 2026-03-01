@@ -66,6 +66,7 @@ void lexer_init(void) {
 void lexer_set_prompts(const char *ps1, const char *ps2) {
   ps1_str = ps1;
   ps2_str = ps2;
+  sh.cur_prompt = ps1;
 }
 
 void lexer_set_alias(int enable) { alias_enabled = enable; }
@@ -768,6 +769,9 @@ struct token *lexer_next(void) {
     peeked = NULL;
     return tok;
   }
+
+  if (at_line_start)
+    sh.cur_prompt = ps1_str;
 
   tok = lexer_read_token();
 
