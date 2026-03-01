@@ -64,7 +64,6 @@ func (le *LineEditor) refreshLine() {
 	fmt.Print(string(le.line))
 	
 	// Move cursor back to the correct position
-	// We need to account for prompt width here eventually, but for now simple:
 	if le.pos < len(le.line) {
 		moveBack := len(le.line) - le.pos
 		fmt.Printf("\x1b[%dD", moveBack)

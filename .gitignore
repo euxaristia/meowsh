@@ -1,6 +1,6 @@
-*.o
-*.txt
 meowsh
 meowsh_go
-tests/fuzzer
-tests/test_completion
+*.o
+*.test
+test_multiline.txt
+test_redir.txt
