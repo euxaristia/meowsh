@@ -52,4 +52,15 @@ void crt_boot_sequence(void) {
   /* Clear screen and reset colors */
   printf("\x1b[2J\x1b[H\x1b[0m");
   fflush(stdout);
+
+  const char *user = var_get("USER");
+  const char *pwd = var_get("PWD");
+  char short_pwd[PATH_MAX];
+  if (!user)
+    user = "meow";
+  if (!pwd)
+    pwd = "?";
+  shorten_path(short_pwd, pwd, sizeof(short_pwd));
+  printf("\x1b[32m[SYSTEM READY] %s @ %s\x1b[0m\n\n", user, short_pwd);
+  fflush(stdout);
 }

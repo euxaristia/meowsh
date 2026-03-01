@@ -297,6 +297,26 @@ static const char *lineedit_find_history_suggestion(const char *line,
   return NULL;
 }
 
+static size_t visual_width(const char *s) {
+  size_t w = 0;
+  int in_esc = 0;
+  if (!s)
+    return 0;
+  while (*s) {
+    if (*s == '\x1b') {
+      in_esc = 1;
+    } else if (in_esc) {
+      if ((*s >= '@' && *s <= '~'))
+        in_esc = 0;
+    } else {
+      if (((unsigned char)*s & 0xC0) != 0x80)
+        w++;
+    }
+    s++;
+  }
+  return w;
+}
+
 static const char *prompt_last_line(const char *prompt) {
   if (!prompt)
     return NULL;
@@ -322,6 +342,7 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   const char *crt = var_get("MEOWSH_CRT");
   int is_crt = crt && strcmp(crt, "1") == 0;
   const char *last_prompt = prompt_last_line(prompt);
+  size_t prompt_w = visual_width(last_prompt);
 
   /* Determine unknown command tokens at the start of each command segment. */
   size_t unknown_start[64];
@@ -454,17 +475,11 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   if (last_prompt)
     strbuf_addstr(&out, last_prompt);
 
-  /* SAVE CURSOR after prompt */
-  strbuf_addstr(&out, "\x1b[s");
-
   if (colored.buf)
     strbuf_addmem(&out, colored.buf, colored.len);
 
-  /* RESTORE CURSOR to end of prompt */
-  strbuf_addstr(&out, "\x1b[u");
-
-  /* Position cursor relative to prompt end */
-  if (pos > 0) {
+  /* Position cursor precisely using absolute horizontal movement */
+  {
     int i, cols = 0;
     for (i = 0; i < pos && line[i]; i++) {
       if (line[i] == '\t')
@@ -472,11 +487,9 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
       else
         cols++;
     }
-    if (cols > 0) {
-      char esc[32];
-      snprintf(esc, sizeof(esc), "\x1b[%dC", cols);
-      strbuf_addstr(&out, esc);
-    }
+    char esc[32];
+    snprintf(esc, sizeof(esc), "\x1b[%zuG", (size_t)cols + prompt_w + 1);
+    strbuf_addstr(&out, esc);
   }
 
   strbuf_addstr(&out, "\x1b[?25h"); /* Show cursor */
@@ -802,12 +815,10 @@ char *lineedit_read(const char *prompt) {
   }
 
   if (prompt && strchr(prompt, '\n')) {
-    /* Print all but the last line of the prompt once. */
+    /* Print multiline prompt once; redraw only the last line. */
     const char *last = prompt_last_line(prompt);
     write(fd_out, prompt, (size_t)(last - prompt));
     display_prompt = last;
-    lineedit_debugf("multiline display_prompt=%s",
-                    display_prompt ? display_prompt : "(null)");
   }
 
   enable_raw_mode(fd_in);
