@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -202,8 +203,12 @@ func expandVariable(s string) string {
 }
 
 func expandVarExpr(expr string) string {
-	// Handle ${parameter:-word}, ${parameter:=word}, ${parameter:?word}, ${parameter:+word}
-	ops := []string{":-", ":=", ":?", ":+", "-", "=", "?", "+"}
+	if strings.HasPrefix(expr, "#") && len(expr) > 1 {
+		val := varGetSimple(expr[1:])
+		return strconv.Itoa(len(val))
+	}
+
+	ops := []string{":-", ":=", ":?", ":+", "-", "=", "?", "+", "%%", "%", "##", "#"}
 	for _, op := range ops {
 		idx := strings.Index(expr, op)
 		if idx != -1 {
@@ -231,7 +236,6 @@ func expandVarExpr(expr string) string {
 						msg = "parameter null or not set"
 					}
 					fmt.Fprintf(os.Stderr, "meowsh: %s: %s\n", param, msg)
-					// In a real shell this would abort script
 					return ""
 				}
 				return val
@@ -240,6 +244,42 @@ func expandVarExpr(expr string) string {
 					return expandVariable(word)
 				}
 				return ""
+			case "##":
+				pattern := expandVariable(word)
+				for i := len(val); i >= 1; i-- {
+					matched, _ := filepath.Match(pattern, val[:i])
+					if matched {
+						return val[i:]
+					}
+				}
+				return val
+			case "#":
+				pattern := expandVariable(word)
+				for i := 1; i <= len(val); i++ {
+					matched, _ := filepath.Match(pattern, val[:i])
+					if matched {
+						return val[i:]
+					}
+				}
+				return val
+			case "%%":
+				pattern := expandVariable(word)
+				for i := 0; i < len(val); i++ {
+					matched, _ := filepath.Match(pattern, val[i:])
+					if matched {
+						return val[:i]
+					}
+				}
+				return val
+			case "%":
+				pattern := expandVariable(word)
+				for i := len(val) - 1; i >= 0; i-- {
+					matched, _ := filepath.Match(pattern, val[i:])
+					if matched {
+						return val[:i]
+					}
+				}
+				return val
 			}
 		}
 	}
@@ -267,7 +307,39 @@ func varGetSimple(name string) string {
 	return ""
 }
 
+func expandTilde(s string) string {
+	if !strings.HasPrefix(s, "~") {
+		return s
+	}
+
+	slashIdx := strings.Index(s, "/")
+	if slashIdx == -1 {
+		slashIdx = len(s)
+	}
+
+	username := s[1:slashIdx]
+	var homeDir string
+
+	if username == "" {
+		homeDir = varGet("HOME")
+	} else {
+		u, err := user.Lookup(username)
+		if err == nil {
+			homeDir = u.HomeDir
+		} else {
+			return s
+		}
+	}
+
+	if homeDir != "" {
+		return homeDir + s[slashIdx:]
+	}
+	return s
+}
+
 func expandAll(s string) string {
+	// 0. Tilde expansion
+	s = expandTilde(s)
 	// 1. Command substitution
 	s = expandCommandSubstitution(s)
 	// 2. Variable expansion & Globbing & Quote removal (handled inside expandVariable for now)
