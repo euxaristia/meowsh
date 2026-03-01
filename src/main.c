@@ -79,13 +79,15 @@ static void setup_interactive(void) {
     sigaction(SIGTSTP, &sa_ignore, NULL);
     sigaction(SIGTTIN, &sa_ignore, NULL);
     sigaction(SIGTTOU, &sa_ignore, NULL);
+    sigaction(SIGTERM, &sa_ignore, NULL);
+    sigaction(SIGHUP, &sa_ignore, NULL);
 
     /* Put ourselves in our own process group. */
     sh.shell_pgid = getpid();
     if (setpgid(sh.shell_pgid, sh.shell_pgid) < 0) {
       sh.shell_pgid = getpgrp();
     }
-
+    
     /* Grab control of the terminal. */
     tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
 
@@ -533,6 +535,13 @@ static void main_loop(void) {
           input_pop();
           continue;
         }
+        if (sh.interactive) {
+           /* DON'T EXIT unless it was a real EOF on a real terminal */
+           if (sh.input->type == INPUT_FD && isatty(sh.input->u.fd)) {
+              /* In interactive mode, lineedit_read returns NULL on Ctrl-D or error.
+               * We trust the input source stack. */
+           }
+        }
         break;
       }
       continue;
@@ -564,6 +573,7 @@ int main(int argc, char **argv) {
     }
   }
 
+  /* Set default aliases after environment import */
   alias_set("la", "ls -A");
   alias_set("ll", "ls -l");
 

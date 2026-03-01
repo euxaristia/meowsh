@@ -393,6 +393,7 @@ static int exec_simple_cmd(struct node *n, int flags) {
   case CMD_EXTERNAL: {
     struct termios tmodes;
     int have_tmodes = 0;
+    struct job *j = NULL;
 
     if (sh.interactive && sh.terminal_fd >= 0) {
       if (tcgetattr(sh.terminal_fd, &tmodes) == 0)
@@ -415,7 +416,7 @@ static int exec_simple_cmd(struct node *n, int flags) {
             tcsetpgrp(sh.terminal_fd, cpid);
         }
         
-        /* Reset signals to default for the child */
+        /* Reset all signals to default for the child */
         for (int i = 1; i < NSIG; i++) {
           if (i == SIGKILL || i == SIGSTOP) continue;
           signal(i, SIG_DFL);
@@ -443,7 +444,14 @@ static int exec_simple_cmd(struct node *n, int flags) {
       /* Parent */
       if (sh.interactive && option_is_set(OPT_MONITOR)) {
         setpgid(pid, pid);
+        
+        j = job_alloc();
+        j->pgid = pid;
+        j->cmd_text = sh_strdup(argv[0]);
+        job_add_proc(j, pid, argv[0]);
+
         if (!(flags & EXEC_BG)) {
+          j->foreground = 1;
           if (sh.terminal_fd >= 0)
             tcsetpgrp(sh.terminal_fd, pid);
         }
@@ -453,27 +461,22 @@ static int exec_simple_cmd(struct node *n, int flags) {
         sh.last_bg_pid = pid;
         status = 0;
       } else {
-        int wstatus;
-        while (waitpid(pid, &wstatus, WUNTRACED) < 0) {
-          if (errno != EINTR)
-            break;
-        }
-
-        if (sh.interactive && option_is_set(OPT_MONITOR)) {
-          if (sh.terminal_fd >= 0) {
-            tcsetpgrp(sh.terminal_fd, sh.shell_pgid);
-            if (have_tmodes)
-              tcsetattr(sh.terminal_fd, TCSADRAIN, &tmodes);
+        if (j) {
+          status = job_wait_fg(j);
+          if (have_tmodes && sh.terminal_fd >= 0)
+            tcsetattr(sh.terminal_fd, TCSADRAIN, &tmodes);
+          job_free(j);
+        } else {
+          int wstatus;
+          while (waitpid(pid, &wstatus, WUNTRACED) < 0) {
+            if (errno != EINTR)
+              break;
           }
-        }
-
-        if (WIFEXITED(wstatus)) {
-          status = WEXITSTATUS(wstatus);
-        } else if (WIFSIGNALED(wstatus)) {
-          status = 128 + WTERMSIG(wstatus);
-        } else if (WIFSTOPPED(wstatus)) {
-          status = 128 + WSTOPSIG(wstatus);
-          fprintf(stderr, "\n[Stopped] %d\n", pid);
+          if (WIFEXITED(wstatus)) {
+            status = WEXITSTATUS(wstatus);
+          } else if (WIFSIGNALED(wstatus)) {
+            status = 128 + WTERMSIG(wstatus);
+          }
         }
       }
     }
@@ -506,6 +509,9 @@ static int exec_pipeline(struct node *n) {
   int prev_fd = -1;
   pid_t *pids;
   int status = 0;
+  struct job *j = NULL;
+  struct termios tmodes;
+  int have_tmodes = 0;
 
   if (ncmds == 1) {
     status = exec_node(cmds[0], 0);
@@ -515,7 +521,17 @@ static int exec_pipeline(struct node *n) {
     return status;
   }
 
+  if (sh.interactive && sh.terminal_fd >= 0) {
+    if (tcgetattr(sh.terminal_fd, &tmodes) == 0)
+      have_tmodes = 1;
+  }
+
   pids = sh_malloc(ncmds * sizeof(pid_t));
+
+  if (sh.interactive && option_is_set(OPT_MONITOR)) {
+    j = job_alloc();
+    j->cmd_text = sh_strdup("pipeline");
+  }
 
   for (i = 0; i < ncmds; i++) {
     int pipefd[2] = {-1, -1};
@@ -541,6 +557,19 @@ static int exec_pipeline(struct node *n) {
       /* Child */
       trap_reset();
 
+      if (sh.interactive && option_is_set(OPT_MONITOR)) {
+        pid_t cpid = getpid();
+        if (j) {
+          if (i == 0) j->pgid = cpid;
+          setpgid(cpid, j->pgid);
+          if (i == 0) tcsetpgrp(sh.terminal_fd, j->pgid);
+        }
+        for (int sig = 1; sig < NSIG; sig++) {
+          if (sig == SIGKILL || sig == SIGSTOP) continue;
+          signal(sig, SIG_DFL);
+        }
+      }
+
       if (prev_fd >= 0) {
         dup2(prev_fd, STDIN_FILENO);
         close(prev_fd);
@@ -558,6 +587,12 @@ static int exec_pipeline(struct node *n) {
     }
 
     /* Parent */
+    if (sh.interactive && option_is_set(OPT_MONITOR)) {
+      if (i == 0) j->pgid = pids[i];
+      setpgid(pids[i], j->pgid);
+      job_add_proc(j, pids[i], "pipeline-proc");
+    }
+
     if (prev_fd >= 0)
       close(prev_fd);
     if (pipefd[1] >= 0)
@@ -568,19 +603,26 @@ static int exec_pipeline(struct node *n) {
   if (prev_fd >= 0)
     close(prev_fd);
 
-  /* Wait for all children */
-  for (i = 0; i < ncmds; i++) {
-    int wstatus;
-    if (pids[i] > 0) {
-      while (waitpid(pids[i], &wstatus, 0) < 0) {
-        if (errno != EINTR)
-          break;
-      }
-      if (i == ncmds - 1) {
-        if (WIFEXITED(wstatus))
-          status = WEXITSTATUS(wstatus);
-        else if (WIFSIGNALED(wstatus))
-          status = 128 + WTERMSIG(wstatus);
+  if (j) {
+    status = job_wait_fg(j);
+    if (have_tmodes && sh.terminal_fd >= 0)
+      tcsetattr(sh.terminal_fd, TCSADRAIN, &tmodes);
+    job_free(j);
+  } else {
+    /* Wait for all children manually if no job control */
+    for (i = 0; i < ncmds; i++) {
+      int wstatus;
+      if (pids[i] > 0) {
+        while (waitpid(pids[i], &wstatus, 0) < 0) {
+          if (errno != EINTR)
+            break;
+        }
+        if (i == ncmds - 1) {
+          if (WIFEXITED(wstatus))
+            status = WEXITSTATUS(wstatus);
+          else if (WIFSIGNALED(wstatus))
+            status = 128 + WTERMSIG(wstatus);
+        }
       }
     }
   }

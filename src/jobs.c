@@ -15,29 +15,19 @@
 #include "trap.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <ctype.h>
 
 void jobs_init(void) {
   sh.jobs = NULL;
   sh.next_job_id = 1;
 
   if (sh.interactive && option_is_set(OPT_MONITOR)) {
-    /* Ignore job control signals in the shell */
-    sh_signal(SIGTSTP, SIG_IGN);
-    sh_signal(SIGTTIN, SIG_IGN);
-    sh_signal(SIGTTOU, SIG_IGN);
     sh_signal(SIGCHLD, sigchld_handler);
-
-    /* Put shell in its own process group */
-    sh.shell_pgid = getpid();
-    if (setpgid(sh.shell_pgid, sh.shell_pgid) < 0) {
-      /* May already be group leader */
-    }
-    /* Take control of the terminal */
-    if (sh.terminal_fd >= 0) {
-      if (tcsetpgrp(sh.terminal_fd, sh.shell_pgid) < 0) {
-        perror("tcsetpgrp");
-      }
-    }
   }
 }
 
@@ -292,4 +282,44 @@ struct job *job_parse_spec(const char *spec) {
   }
 
   return NULL;
+}
+
+struct job *job_alloc(void) {
+  struct job *j = sh_malloc(sizeof(*j));
+  memset(j, 0, sizeof(*j));
+  j->id = sh.next_job_id++;
+  j->state = JOB_RUNNING;
+  j->next = sh.jobs;
+  sh.jobs = j;
+  return j;
+}
+
+void job_add_proc(struct job *j, pid_t pid, const char *cmd) {
+  struct process *p = sh_malloc(sizeof(*p));
+  memset(p, 0, sizeof(*p));
+  p->pid = pid;
+  p->state = PROC_RUNNING;
+  p->cmd = sh_strdup(cmd ? cmd : "");
+  p->next = j->procs;
+  j->procs = p;
+}
+
+void job_free(struct job *j) {
+  struct job **pp;
+  struct process *p, *next;
+
+  for (pp = &sh.jobs; *pp; pp = &(*pp)->next) {
+    if (*pp == j) {
+      *pp = j->next;
+      break;
+    }
+  }
+
+  for (p = j->procs; p; p = next) {
+    next = p->next;
+    free(p->cmd);
+    free(p);
+  }
+  free(j->cmd_text);
+  free(j);
 }

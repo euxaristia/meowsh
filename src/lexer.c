@@ -56,11 +56,14 @@ static const struct {
                       {"!", TOK_BANG},
                       {NULL, 0}};
 
+static int is_command_pos;
+
 void lexer_init(void) {
   peeked = NULL;
   ps1_str = NULL;
   ps2_str = NULL;
   at_line_start = 1;
+  is_command_pos = 1;
   alias_enabled = 1;
   pending_heredocs = NULL;
 }
@@ -774,10 +777,20 @@ struct token *lexer_next(void) {
   tok = lexer_read_token();
 
   /* Try alias expansion at command position */
-  if (tok->type == TOK_WORD && alias_enabled) {
+  if (tok->type == TOK_WORD && alias_enabled && is_command_pos) {
     if (try_alias(tok)) {
       tok = lexer_read_token();
     }
+  }
+
+  /* Update is_command_pos for next token */
+  if (tok->type == TOK_WORD || tok->type == TOK_ASSIGNMENT || tok->type == TOK_IO_NUMBER) {
+    is_command_pos = 0;
+  } else if (tok->type == TOK_PIPE || tok->type == TOK_AND_IF || 
+             tok->type == TOK_OR_IF || tok->type == TOK_SEMI || 
+             tok->type == TOK_AMP || tok->type == TOK_NEWLINE ||
+             tok->type == TOK_LPAREN || tok->type == TOK_BANG) {
+    is_command_pos = 1;
   }
 
   /* Classify reserved words */
