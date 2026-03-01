@@ -297,6 +297,15 @@ static const char *lineedit_find_history_suggestion(const char *line,
   return NULL;
 }
 
+static const char *prompt_last_line(const char *prompt) {
+  if (!prompt)
+    return NULL;
+  const char *ln = strrchr(prompt, '\n');
+  if (ln)
+    return ln + 1;
+  return prompt;
+}
+
 static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
                          int show_suggestion) {
   struct strbuf colored = STRBUF_INIT;
@@ -307,6 +316,7 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   char quote_char = 0;
   const char *crt = var_get("MEOWSH_CRT");
   int is_crt = crt && strcmp(crt, "1") == 0;
+  const char *last_prompt = prompt_last_line(prompt);
 
   /* Determine unknown command tokens at the start of each command segment. */
   size_t unknown_start[64];
@@ -436,8 +446,8 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
   /* Render buffer */
   strbuf_addstr(&out, "\x1b[?25l"); /* Hide cursor */
   strbuf_addstr(&out, "\r\x1b[2K"); /* CR and clear line */
-  if (prompt)
-    strbuf_addstr(&out, prompt);
+  if (last_prompt)
+    strbuf_addstr(&out, last_prompt);
 
   /* SAVE CURSOR after prompt */
   strbuf_addstr(&out, "\x1b[s");
@@ -469,26 +479,6 @@ static void refresh_line(int fd, const char *prompt, struct strbuf *sb, int pos,
 
   strbuf_free(&colored);
   strbuf_free(&out);
-}
-
-static const char *prompt_last_line(const char *prompt) {
-  const char *last;
-  const char *p;
-  const char *end;
-
-  if (!prompt)
-    return NULL;
-
-  end = prompt + strlen(prompt); // flawfinder: ignore
-  while (end > prompt && end[-1] == '\n')
-    end--;
-
-  last = prompt;
-  for (p = prompt; p < end; p++) {
-    if (*p == '\n')
-      last = p + 1;
-  }
-  return last;
 }
 
 static int word_start_at(const char *buf, int pos) {
