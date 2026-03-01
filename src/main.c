@@ -369,7 +369,8 @@ static char *build_starship_prompt(int status) {
       close(devnull);
     }
 
-    execlp("starship", "starship", "prompt", "--status", status_arg, "--shlvl", // flawfinder: ignore
+    execlp("starship", "starship", "prompt", "--status", status_arg,
+           "--shlvl", // flawfinder: ignore
            shlvl_arg, "--terminal-width", width_arg,
            (char *)NULL); // flawfinder: ignore
     _exit(127);
@@ -459,19 +460,21 @@ static char *with_meow_marker(const char *prompt) {
   marker_len = strlen(marker); // flawfinder: ignore // flawfinder: ignore
   prefix_len = (size_t)(insert_at - prompt);
   style_prefix_len = (size_t)(style_prefix_end - insert_at);
-  suffix_len = strlen( // flawfinder: ignore
+  suffix_len = strlen(          // flawfinder: ignore
       matched ? p : insert_at); // flawfinder: ignore // flawfinder: ignore
 
   out = sh_malloc(prefix_len + style_prefix_len + marker_len + suffix_len + 1);
   memcpy(out, prompt, prefix_len);                       // flawfinder: ignore
   memcpy(out + prefix_len, insert_at, style_prefix_len); // flawfinder: ignore
-  memcpy(out + prefix_len + style_prefix_len, marker, // flawfinder: ignore
-         marker_len); // flawfinder: ignore
+  memcpy(out + prefix_len + style_prefix_len, marker,    // flawfinder: ignore
+         marker_len);                                    // flawfinder: ignore
   if (matched) {
-    memcpy(out + prefix_len + style_prefix_len + marker_len, p, // flawfinder: ignore
+    memcpy(out + prefix_len + style_prefix_len + marker_len,
+           p,               // flawfinder: ignore
            suffix_len + 1); // flawfinder: ignore
   } else {
-    memcpy(out + prefix_len + style_prefix_len + marker_len, insert_at, // flawfinder: ignore
+    memcpy(out + prefix_len + style_prefix_len + marker_len,
+           insert_at,       // flawfinder: ignore
            suffix_len + 1); // flawfinder: ignore
   }
   return out;
@@ -522,7 +525,6 @@ static void main_loop(void) {
         snprintf(ps1_buf, sizeof(ps1_buf), "\x1b[32m[%s @ %s] 𓃠  \x1b[0m", user,
                  short_pwd);
         sh.ps1 = ps1_buf;
-        ps2 = "𓃠  ";
       } else if (ps1_is_default_style(cfg_ps1) && sh.starship_enabled) {
         starship_ps1 = build_starship_prompt(sh.last_status);
         if (starship_ps1) {
