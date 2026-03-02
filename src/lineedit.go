@@ -135,13 +135,28 @@ func (le *LineEditor) renderMenu() {
 	}
 
 	rows := (len(le.lastMatches) + cols - 1) / cols
+	maxDisplayRows := 10
 	displayRows := rows
-	if displayRows > 10 {
-		displayRows = 10
+	if displayRows > maxDisplayRows {
+		displayRows = maxDisplayRows
+	}
+
+	startRow := 0
+	if le.matchIdx != -1 {
+		currentRow := le.matchIdx / cols
+		if currentRow >= maxDisplayRows {
+			startRow = currentRow - maxDisplayRows + 1
+		}
 	}
 
 	actualLinesPrinted := 0
-	for r := 0; r < displayRows; r++ {
+	if startRow > 0 {
+		fmt.Print("\n")
+		actualLinesPrinted++
+		fmt.Printf("... (%d matches above)", startRow*cols)
+	}
+
+	for r := startRow; r < startRow+displayRows && r < rows; r++ {
 		fmt.Print("\n")
 		actualLinesPrinted++
 		for c := 0; c < cols; c++ {
@@ -165,10 +180,10 @@ func (le *LineEditor) renderMenu() {
 		}
 	}
 
-	if rows > displayRows {
+	if rows > startRow+displayRows {
 		fmt.Print("\n")
 		actualLinesPrinted++
-		fmt.Printf("... (%d more matches)", len(le.lastMatches)-(displayRows*cols))
+		fmt.Printf("... (%d more matches below)", len(le.lastMatches)-(startRow+displayRows)*cols)
 	}
 
 	le.menuRows = actualLinesPrinted
