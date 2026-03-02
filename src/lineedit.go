@@ -78,6 +78,21 @@ func (le *LineEditor) getTermWidth() int {
 	return int(ws.Col)
 }
 
+func (le *LineEditor) getSuggestion() string {
+	if len(le.line) == 0 {
+		return ""
+	}
+	lineStr := string(le.line)
+	sh.HistoryMutex.Lock()
+	defer sh.HistoryMutex.Unlock()
+	for i := len(sh.History) - 1; i >= 0; i-- {
+		if strings.HasPrefix(sh.History[i], lineStr) && len(sh.History[i]) > len(lineStr) {
+			return sh.History[i][len(lineStr):]
+		}
+	}
+	return ""
+}
+
 func (le *LineEditor) refreshLine(clearBelow bool) {
 	fmt.Print("\r")
 	if clearBelow {
@@ -89,9 +104,19 @@ func (le *LineEditor) refreshLine(clearBelow bool) {
 	fmt.Print(le.prompt)
 	fmt.Print(string(le.line))
 
+	suggestion := ""
+	if le.pos == len(le.line) {
+		suggestion = le.getSuggestion()
+		if suggestion != "" {
+			fmt.Print("\x1b[90m" + suggestion + "\x1b[0m")
+		}
+	}
+
 	if le.pos < len(le.line) {
 		moveBack := len(le.line) - le.pos
 		fmt.Printf("\x1b[%dD", moveBack)
+	} else if suggestion != "" {
+		fmt.Printf("\x1b[%dD", len(suggestion))
 	}
 }
 
@@ -120,7 +145,7 @@ func (le *LineEditor) renderMenu() {
 		fmt.Print("\n")
 		actualLinesPrinted++
 		for c := 0; c < cols; c++ {
-			idx := r + c*rows
+			idx := r*cols + c
 			if idx < len(le.lastMatches) {
 				m := le.lastMatches[idx]
 				if idx == le.matchIdx {
@@ -253,7 +278,7 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 				le.refreshLine(true)
 				if len(le.lastMatches) > 0 {
 					le.renderMenu()
-					le.refreshLine(true)
+					le.refreshLine(false)
 				}
 			case 27: // Escape sequence
 				if i+2 < n && buf[i+1] == '[' {
@@ -263,7 +288,8 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 						le.refreshLine(true)
 						if len(le.lastMatches) > 0 {
 							le.renderMenu()
-							le.refreshLine(true)
+							le.refreshLine(false)
+
 						}
 						i += 2
 						continue
@@ -287,7 +313,8 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 						}
 						le.refreshLine(true)
 						le.renderMenu()
-						le.refreshLine(true)
+						le.refreshLine(false)
+
 						i += 2
 						continue
 					}
@@ -323,6 +350,12 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 						if le.pos < len(le.line) {
 							le.pos++
 							fmt.Print("\x1b[1C")
+						} else {
+							suggestion := le.getSuggestion()
+							if suggestion != "" {
+								le.insertAtCursor(suggestion)
+								le.refreshLine(true)
+							}
 						}
 					case 'D': // Left
 						if le.pos > 0 {
@@ -392,37 +425,36 @@ func (le *LineEditor) moveMenu(dRow, dCol int) {
 	if cols == 0 {
 		cols = 1
 	}
-	rows := (len(le.lastMatches) + cols - 1) / cols
 
 	if le.matchIdx == -1 {
 		le.matchIdx = 0
 		return
 	}
 
-	r := le.matchIdx % rows
-	c := le.matchIdx / rows
-
-	if dRow != 0 {
-		r = (r + dRow + rows) % rows
-	}
 	if dCol != 0 {
-		c = (c + dCol + cols) % cols
-	}
+		// Linear movement for horizontal (Tab/Shift-Tab/Left/Right)
+		le.matchIdx = (le.matchIdx + dCol + len(le.lastMatches)) % len(le.lastMatches)
+	} else if dRow != 0 {
+		// Vertical movement
+		r := le.matchIdx / cols
+		c := le.matchIdx % cols
+		rows := (len(le.lastMatches) + cols - 1) / cols
 
-	newIdx := r + c*rows
-	if newIdx >= len(le.lastMatches) {
-		if dCol > 0 {
-			newIdx = r
-		} else if dCol < 0 {
-			newIdx = r + (cols-2)*rows
-			for newIdx >= len(le.lastMatches) {
-				newIdx -= rows
+		r = (r + dRow + rows) % rows
+		newIdx := r*cols + c
+		if newIdx >= len(le.lastMatches) {
+			if dRow > 0 {
+				newIdx = c // Wrap to top
+			} else {
+				// Move to last available item in this column
+				newIdx = (rows - 2)*cols + c
+				if newIdx >= len(le.lastMatches) || newIdx < 0 {
+					newIdx = c
+				}
 			}
-		} else {
-			newIdx = 0
 		}
+		le.matchIdx = newIdx
 	}
-	le.matchIdx = newIdx
 }
 
 func (le *LineEditor) applyMatch() {
