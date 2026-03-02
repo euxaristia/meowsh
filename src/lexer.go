@@ -75,7 +75,6 @@ func (l *Lexer) readPendingHeredocs() {
 	l.pendingHeredocs = nil
 }
 
-
 func (l *Lexer) readMore() bool {
 	if l.promptReader != nil {
 		line, err := l.promptReader.ReadLine(varGet("PS2"))
@@ -133,13 +132,11 @@ func (l *Lexer) NextToken() Token {
 }
 
 func (l *Lexer) skipBlanks() {
-	for {
-		r := l.NextRune()
+	for l.pos < len(l.input) {
+		r := rune(l.input[l.pos])
 		if r == ' ' || r == '\t' {
+			l.pos++
 			continue
-		}
-		if r != -1 {
-			l.backup()
 		}
 		break
 	}

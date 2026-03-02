@@ -15,7 +15,6 @@ type LineEditor struct {
 	prompt      string
 	line        []rune
 	pos         int
-	history     []string
 	historyIdx  int
 	origTermios syscall.Termios
 	rawMode     bool
@@ -33,7 +32,6 @@ type LineEditor struct {
 
 func NewLineEditor() *LineEditor {
 	return &LineEditor{
-		history:    []string{},
 		historyIdx: -1,
 		reader:     bufio.NewReader(os.Stdin),
 		matchIdx:   -1,
@@ -87,10 +85,10 @@ func (le *LineEditor) refreshLine(clearBelow bool) {
 	} else {
 		fmt.Print("\x1b[K")
 	}
-	
+
 	fmt.Print(le.prompt)
 	fmt.Print(string(le.line))
-	
+
 	if le.pos < len(le.line) {
 		moveBack := len(le.line) - le.pos
 		fmt.Printf("\x1b[%dD", moveBack)
@@ -110,13 +108,13 @@ func (le *LineEditor) renderMenu() {
 	if cols == 0 {
 		cols = 1
 	}
-	
+
 	rows := (len(le.lastMatches) + cols - 1) / cols
 	displayRows := rows
 	if displayRows > 10 {
 		displayRows = 10
 	}
-	
+
 	actualLinesPrinted := 0
 	for r := 0; r < displayRows; r++ {
 		fmt.Print("\n")
@@ -141,7 +139,7 @@ func (le *LineEditor) renderMenu() {
 			}
 		}
 	}
-	
+
 	if rows > displayRows {
 		fmt.Print("\n")
 		actualLinesPrinted++
@@ -167,23 +165,25 @@ func (le *LineEditor) readLineCooked() (string, error) {
 		fmt.Print(le.prompt)
 	}
 	line, err := le.reader.ReadString('\n')
+	if err != nil && len(line) == 0 {
+		return "", err
+	}
 	return strings.TrimRight(line, "\r\n"), err
 }
 
 func (le *LineEditor) ReadLine(prompt string) (string, error) {
+	// fmt.Fprintf(os.Stderr, "DEBUG: ReadLine started, interactive=%v, isatty=%v\n", sh.Interactive, isatty(os.Stdin.Fd()))
 	le.prompt = prompt
 	le.line = []rune{}
 	le.pos = 0
 	le.resetCompletion()
-	
+
 	if sh.Interactive && isatty(os.Stdin.Fd()) {
 		if err := le.enableRawMode(); err != nil {
-			fmt.Print(prompt)
 			return le.readLineCooked()
 		}
 		defer le.disableRawMode()
 	} else {
-		fmt.Print(prompt)
 		return le.readLineCooked()
 	}
 
@@ -193,11 +193,16 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 	for {
 		n, err := os.Stdin.Read(buf)
 		if err != nil {
+			if err != io.EOF {
+				fmt.Fprintf(os.Stderr, "meowsh: read error: %v\n", err)
+			}
 			return "", err
 		}
 		if n == 0 {
 			continue
 		}
+
+		// fmt.Fprintf(os.Stderr, "DEBUG: Read %d bytes: %v\n", n, buf[:n])
 
 		for i := 0; i < n; i++ {
 			b := buf[i]
@@ -248,7 +253,7 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 				le.refreshLine(true)
 				if len(le.lastMatches) > 0 {
 					le.renderMenu()
-					le.refreshLine(false)
+					le.refreshLine(true)
 				}
 			case 27: // Escape sequence
 				if i+2 < n && buf[i+1] == '[' {
@@ -258,7 +263,7 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 						le.refreshLine(true)
 						if len(le.lastMatches) > 0 {
 							le.renderMenu()
-							le.refreshLine(false)
+							le.refreshLine(true)
 						}
 						i += 2
 						continue
@@ -282,12 +287,38 @@ func (le *LineEditor) ReadLine(prompt string) (string, error) {
 						}
 						le.refreshLine(true)
 						le.renderMenu()
-						le.refreshLine(false)
+						le.refreshLine(true)
 						i += 2
 						continue
 					}
 				normalArrow:
 					switch key {
+					case 'A': // Up
+						sh.HistoryMutex.Lock()
+						if le.historyIdx < len(sh.History)-1 {
+							if le.historyIdx == -1 {
+								le.baseLine = make([]rune, len(le.line))
+								copy(le.baseLine, le.line)
+							}
+							le.historyIdx++
+							le.line = []rune(sh.History[len(sh.History)-1-le.historyIdx])
+							le.pos = len(le.line)
+							le.refreshLine(true)
+						}
+						sh.HistoryMutex.Unlock()
+					case 'B': // Down
+						sh.HistoryMutex.Lock()
+						if le.historyIdx >= 0 {
+							le.historyIdx--
+							if le.historyIdx == -1 {
+								le.line = le.baseLine
+							} else {
+								le.line = []rune(sh.History[len(sh.History)-1-le.historyIdx])
+							}
+							le.pos = len(le.line)
+							le.refreshLine(true)
+						}
+						sh.HistoryMutex.Unlock()
 					case 'C': // Right
 						if le.pos < len(le.line) {
 							le.pos++
@@ -348,7 +379,7 @@ func (le *LineEditor) moveMenu(dRow, dCol int) {
 	if len(le.lastMatches) == 0 {
 		return
 	}
-	
+
 	width := le.getTermWidth()
 	maxLen := 0
 	for _, m := range le.lastMatches {
@@ -404,7 +435,7 @@ func (le *LineEditor) applyMatch() {
 	if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
 		suffix = "/"
 	}
-	
+
 	le.line = make([]rune, len(le.baseLine))
 	copy(le.line, le.baseLine)
 	le.pos = le.basePos
@@ -536,7 +567,7 @@ func (le *LineEditor) handleTab(back bool) {
 			le.baseLine = make([]rune, len(le.line))
 			copy(le.baseLine, le.line)
 			le.basePos = le.pos
-			
+
 			le.moveMenu(0, 1)
 			le.applyMatch()
 		}
@@ -574,4 +605,44 @@ func (le *LineEditor) promptWidth() int {
 		}
 	}
 	return w
+}
+
+func (le *LineEditor) AddHistory(line string) {
+	if line == "" {
+		return
+	}
+	sh.HistoryMutex.Lock()
+	defer sh.HistoryMutex.Unlock()
+	if len(sh.History) > 0 && sh.History[len(sh.History)-1] == line {
+		return
+	}
+	sh.History = append(sh.History, line)
+	if len(sh.History) > 1000 {
+		sh.History = sh.History[len(sh.History)-1000:]
+	}
+}
+
+func (le *LineEditor) LoadHistory(filename string) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		le.AddHistory(scanner.Text())
+	}
+}
+
+func (le *LineEditor) SaveHistory(filename string) {
+	sh.HistoryMutex.Lock()
+	defer sh.HistoryMutex.Unlock()
+	f, err := os.Create(filename)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	for _, line := range sh.History {
+		f.WriteString(line + "\n")
+	}
 }

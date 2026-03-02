@@ -5,8 +5,10 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -14,6 +16,9 @@ var sh Shell
 
 func mainLoop() {
 	le := NewLineEditor()
+	if sh.Interactive {
+		le.LoadHistory(sh.HistoryFile)
+	}
 	for {
 		prompt := ""
 		if sh.Interactive {
@@ -21,16 +26,30 @@ func mainLoop() {
 			prompt = buildPrompt()
 		}
 
+		// Split multi-line prompts: print header lines directly,
+		// only pass the last line to ReadLine for in-place editing.
+		if idx := strings.LastIndex(prompt, "\n"); idx >= 0 {
+			fmt.Print(prompt[:idx+1])
+			prompt = prompt[idx+1:]
+		}
+
 		line, err := le.ReadLine(prompt)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
+			// Prevent busy loop on errors
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
 		if strings.TrimSpace(line) == "" {
 			continue
+		}
+
+		if sh.Interactive {
+			le.AddHistory(line)
+			le.SaveHistory(sh.HistoryFile)
 		}
 
 		sh.Lineno++
@@ -118,15 +137,29 @@ func main() {
 
 	if sh.Interactive {
 		// Ignore terminal control signals
-		signal.Ignore(syscall.SIGTTOU, syscall.SIGTTIN, syscall.SIGTSTP, syscall.SIGQUIT)
+		signal.Ignore(syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU)
 
 		sh.ShellPid = os.Getpid()
-		syscall.Setpgid(sh.ShellPid, sh.ShellPid)
+		if pgrp, _ := syscall.Getpgid(sh.ShellPid); pgrp != sh.ShellPid {
+			if err := syscall.Setpgid(sh.ShellPid, sh.ShellPid); err != nil {
+				fmt.Fprintf(os.Stderr, "meowsh: setpgid: %v\n", err)
+			}
+		}
 
 		// Take control of the terminal
-		syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
+		if isatty(os.Stdin.Fd()) {
+			syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
+		}
 
 		fmt.Fprintf(os.Stderr, "meowsh — welcome! (type 'exit' to quit)\n")
+	}
+
+	if sh.LoginShell {
+		home := varGet("HOME")
+		rcPath := filepath.Join(home, ".meowshrc")
+		if _, err := os.Stat(rcPath); err == nil {
+			builtinSource([]string{rcPath})
+		}
 	}
 
 	mainLoop()

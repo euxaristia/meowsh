@@ -124,14 +124,20 @@ func (p *Parser) parseSimpleCommand() *ASTNode {
 			continue
 		}
 
-		if tok.Type == TOK_ASSIGNMENT && len(node.Args) == 0 {
-			if node.Assigns == nil {
-				node.Assigns = make(map[string]string)
+		if tok.Type == TOK_ASSIGNMENT {
+			if len(node.Args) == 0 {
+				if node.Assigns == nil {
+					node.Assigns = make(map[string]string)
+				}
+				parts := splitAssignment(tok.Value)
+				node.Assigns[parts[0]] = parts[1]
+				p.lexer.NextToken()
+				continue
+			} else {
+				node.Args = append(node.Args, tok.Value)
+				p.lexer.NextToken()
+				continue
 			}
-			parts := splitAssignment(tok.Value)
-			node.Assigns[parts[0]] = parts[1]
-			p.lexer.NextToken()
-			continue
 		}
 
 		if tok.Type == TOK_WORD {

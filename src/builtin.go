@@ -266,11 +266,20 @@ func builtinSource(args []string) int {
 	return 0
 }
 
+func builtinHistory(args []string) int {
+	sh.HistoryMutex.Lock()
+	defer sh.HistoryMutex.Unlock()
+	for i, line := range sh.History {
+		fmt.Printf("%5d  %s\n", i+1, line)
+	}
+	return 0
+}
+
 func GetBuiltins() []string {
 	return []string{
 		"alias", "bg", "cd", "continue", "echo", "eval", "exit", "export",
-		"false", "fg", "jobs", "kill", "local", "read", "readonly", "return",
-		"set", "shift", "source", "trap", "true", "type", "ulimit", "umask",
+		"false", "fg", "history", "jobs", "kill", "local", "read", "readonly", "return",
+		"set", "shift", "source", ".", "trap", "true", "type", "ulimit", "umask",
 		"unalias", "unset", "wait", "if", "then", "else", "elif", "fi",
 		"while", "until", "for", "do", "done", "case", "esac", "in",
 	}
@@ -299,7 +308,7 @@ func builtinType(args []string) int {
 		"false": true, "fg": true, "for": true, "function": true,
 		"if": true, "jobs": true, "kill": true, "local": true,
 		"read": true, "readonly": true, "return": true, "set": true,
-		"shift": true, "source": true, "then": true, "trap": true,
+		"shift": true, "source": true, ".": true, "then": true, "trap": true,
 		"true": true, "type": true, "ulimit": true, "umask": true,
 		"unalias": true, "unset": true, "wait": true, "while": true,
 		"until": true, "case": true, "esac": true, "do": true, "done": true,

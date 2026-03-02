@@ -1,8 +1,8 @@
 package main
-
 import (
 	"bufio"
 	"os"
+	"sync"
 )
 
 type Shell struct {
@@ -17,13 +17,15 @@ type Shell struct {
 	Aliases         map[string]string
 	PosParams       []string
 	Jobs            []*Job
+	JobsMutex       sync.Mutex
+	History         []string
+	HistoryMutex    sync.Mutex
 	NextJobId       int
 	Ps1             string
 	Ps2             string
 	CurPrompt       string
 	HistoryFile     string
 	Input           *InputSource
-	StarshipEnabled bool
 	Trap            map[string]string
 	Functions       map[string]*FuncDef
 	Lineno          int

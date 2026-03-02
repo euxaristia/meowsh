@@ -34,8 +34,9 @@ func jobReap() {
 		jobUpdateStatus(pid, wstatus)
 	}
 }
-
 func jobUpdateStatus(pid int, status syscall.WaitStatus) {
+	sh.JobsMutex.Lock()
+	defer sh.JobsMutex.Unlock()
 	for _, j := range sh.Jobs {
 		for _, p := range j.Procs {
 			if p.Pid == pid {
@@ -74,13 +75,19 @@ func jobUpdateStatus(pid int, status syscall.WaitStatus) {
 }
 
 func jobWaitFg(j *Job) int {
-	for j.State == JOB_RUNNING {
-		// In interactive mode with MONITOR, SIGCHLD handler will update status.
-		// We still need to wait if not using SIGCHLD or to block.
+	for {
+		sh.JobsMutex.Lock()
+		if j.State != JOB_RUNNING {
+			sh.JobsMutex.Unlock()
+			break
+		}
+		sh.JobsMutex.Unlock()
+
 		var wstatus syscall.WaitStatus
-		pid, err := syscall.Wait4(-j.Pgid, &wstatus, syscall.WUNTRACED, nil)
+		pid, err := syscall.Wait4(-j.Pgid, &wstatus, syscall.WUNTRACED|syscall.WCONTINUED, nil)
 		if err != nil {
 			if err == syscall.ECHILD {
+				// No more children in this PGID
 				break
 			}
 			if err == syscall.EINTR {
@@ -99,21 +106,27 @@ func jobWaitFg(j *Job) int {
 	status := 0
 	if len(j.Procs) > 0 {
 		lastProc := j.Procs[len(j.Procs)-1]
-		status = syscall.WaitStatus(lastProc.Status).ExitStatus()
-		if syscall.WaitStatus(lastProc.Status).Signaled() {
-			status = 128 + int(syscall.WaitStatus(lastProc.Status).Signal())
+		ws := syscall.WaitStatus(lastProc.Status)
+		if ws.Exited() {
+			status = ws.ExitStatus()
+		} else if ws.Signaled() {
+			status = 128 + int(ws.Signal())
 		}
 	}
 
 	// Give terminal back to shell
 	if sh.Interactive {
 		syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&sh.ShellPid)))
+		// Also restore terminal to cooked mode if it was left in a mess? 
+		// Actually, LineEditor.ReadLine will do its own setup.
 	}
 
 	return status
 }
 
 func jobsCleanup() {
+	sh.JobsMutex.Lock()
+	defer sh.JobsMutex.Unlock()
 	newJobs := []*Job{}
 	for _, j := range sh.Jobs {
 		if j.State == JOB_DONE && (j.Foreground || j.Notified) {
@@ -125,16 +138,20 @@ func jobsCleanup() {
 }
 
 func jobsNotify() {
+	sh.JobsMutex.Lock()
 	for _, j := range sh.Jobs {
 		if j.State == JOB_DONE && !j.Notified && !j.Foreground {
 			fmt.Printf("[%d]+  Done\t\t%s\n", j.Id, j.CmdText)
 			j.Notified = true
 		}
 	}
+	sh.JobsMutex.Unlock()
 	jobsCleanup()
 }
 
 func builtinJobs(args []string) int {
+	sh.JobsMutex.Lock()
+	defer sh.JobsMutex.Unlock()
 	for _, j := range sh.Jobs {
 		stateStr := "Running"
 		if j.State == JOB_STOPPED {
@@ -148,7 +165,9 @@ func builtinJobs(args []string) int {
 }
 
 func builtinFg(args []string) int {
+	sh.JobsMutex.Lock()
 	if len(sh.Jobs) == 0 {
+		sh.JobsMutex.Unlock()
 		fmt.Println("meowsh: fg: no current job")
 		return 1
 	}
@@ -157,6 +176,7 @@ func builtinFg(args []string) int {
 	fmt.Printf("%s\n", j.CmdText)
 	j.State = JOB_RUNNING
 	j.Foreground = true
+	sh.JobsMutex.Unlock()
 	
 	// Give terminal to job
 	syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), uintptr(syscall.TIOCSPGRP), uintptr(unsafe.Pointer(&j.Pgid)))
@@ -168,6 +188,8 @@ func builtinFg(args []string) int {
 }
 
 func builtinBg(args []string) int {
+	sh.JobsMutex.Lock()
+	defer sh.JobsMutex.Unlock()
 	if len(sh.Jobs) == 0 {
 		fmt.Println("meowsh: bg: no current job")
 		return 1

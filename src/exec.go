@@ -333,6 +333,10 @@ func execCommand(args []string, foreground bool) int {
 		return 0
 	case "cd":
 		return builtinCd(args[1:])
+	case "source", ".":
+		return builtinSource(args[1:])
+	case "history":
+		return builtinHistory(args[1:])
 	case "pwd":
 		fmt.Println(varGet("PWD"))
 		return 0
@@ -357,6 +361,38 @@ func execCommand(args []string, foreground bool) int {
 		return builtinFg(args[1:])
 	case "bg":
 		return builtinBg(args[1:])
+	case "export":
+		return builtinExport(args[1:])
+	case "set":
+		return builtinSet(args[1:])
+	case "unset":
+		return builtinUnset(args[1:])
+	case "alias":
+		return builtinAlias(args[1:])
+	case "unalias":
+		return builtinUnalias(args[1:])
+	case "read":
+		return builtinRead(args[1:])
+	case "shift":
+		return builtinShift(args[1:])
+	case "local":
+		return builtinLocal(args[1:])
+	case "readonly":
+		return builtinReadonly(args[1:])
+	case "eval":
+		return builtinEval(args[1:])
+	case "trap":
+		return builtinTrap(args[1:])
+	case "umask":
+		return builtinUmask(args[1:])
+	case "ulimit":
+		return builtinUlimit(args[1:])
+	case "type":
+		return builtinType(args[1:])
+	case "kill":
+		return builtinKill(args[1:])
+	case "wait":
+		return builtinWait(args[1:])
 	}
 
 	// External commands
@@ -396,7 +432,7 @@ func execCommand(args []string, foreground bool) int {
 		return 1
 	}
 
-	pgid, _ := syscall.Getpgid(cmd.Process.Pid)
+	pgid := cmd.Process.Pid
 	job := &Job{
 		Id:         sh.NextJobId,
 		Pgid:       pgid,
@@ -406,7 +442,9 @@ func execCommand(args []string, foreground bool) int {
 		CmdText:    strings.Join(args, " "),
 	}
 	sh.NextJobId++
+	sh.JobsMutex.Lock()
 	sh.Jobs = append(sh.Jobs, job)
+	sh.JobsMutex.Unlock()
 
 	if sh.Interactive && foreground {
 		// Give terminal to job

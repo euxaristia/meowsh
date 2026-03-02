@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unicode"
@@ -24,9 +25,11 @@ func shellInit() {
 	sh.Vars["PWD"] = Var{Value: getEnv("PWD", "/"), Flags: 0}
 	sh.Vars["SHELL"] = Var{Value: "/bin/meowsh", Flags: 0}
 	sh.Vars["TERM"] = Var{Value: getEnv("TERM", "dumb"), Flags: 0}
-	sh.Vars["PS1"] = Var{Value: "𓃠 ", Flags: 0}
-	sh.Vars["PS2"] = Var{Value: "𓃠 ", Flags: 0}
+	sh.Vars["PS1"] = Var{Value: "meowsh> ", Flags: 0}
+	sh.Vars["PS2"] = Var{Value: "meowsh... ", Flags: 0}
 	sh.Vars["SHLVL"] = Var{Value: "1", Flags: 0}
+
+	sh.HistoryFile = filepath.Join(sh.Vars["HOME"].Value, ".meowsh_history")
 
 	jobsInit()
 }

@@ -10,7 +10,6 @@ A POSIX-compliant shell implementation.
 - Job control
 - Variable expansion
 - Redirections
-- Auto-detect Starship in interactive mode and render prompt via `starship prompt`
 
 ## Building
 
@@ -27,8 +26,6 @@ After building, you can start the shell with:
 ```bash
 ./meowsh
 ```
-
-To disable automatic Starship initialization, set `MEOWSH_STARSHIP=0` before starting `meowsh`.
 
 ## Development
 
