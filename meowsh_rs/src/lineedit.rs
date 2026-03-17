@@ -1,11 +1,12 @@
 use crate::shell::build_prompt;
 use rustyline::completion::Completer;
+use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::history::FileHistory;
 use rustyline::validate::Validator;
-use rustyline::{Editor, Helper};
+use rustyline::{ColorMode, Editor, Helper};
 use std::borrow::Cow;
 
 pub struct MeowshHelper;
@@ -100,7 +101,12 @@ impl Highlighter for MeowshHelper {
         prompt: &'p str,
         _default: bool,
     ) -> Cow<'b, str> {
-        Cow::Owned(format!("\x1b[32m{}\x1b[0m ", prompt.trim()))
+        // Ensure trailing space for input separation
+        if prompt.ends_with(' ') {
+            Cow::Borrowed(prompt)
+        } else {
+            Cow::Owned(format!("{} ", prompt))
+        }
     }
 }
 
@@ -132,6 +138,7 @@ pub fn run_interactive() {
         }
     };
 
+    rl.set_color_mode(ColorMode::Forced);
     rl.set_helper(Some(MeowshHelper));
 
     let shell = crate::shell::SHELL.shell.lock().unwrap();
