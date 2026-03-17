@@ -1,0 +1,17 @@
+[package]
+name = "meowsh_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2"
+rustyline = "14"
+glob = "0.3"
+users = "0.11"
+once_cell = "1.19"
+lazy_static = "1.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
