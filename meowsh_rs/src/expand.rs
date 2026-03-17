@@ -1,5 +1,4 @@
 use crate::shell::{var_get, var_set, SHELL};
-use glob::glob;
 use std::process::Command;
 
 pub fn expand_all(s: &str) -> String {

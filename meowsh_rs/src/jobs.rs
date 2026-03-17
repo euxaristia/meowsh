@@ -4,7 +4,7 @@ use crate::types::{Job, JobState, ProcState};
 pub fn jobs_init() {}
 
 pub fn job_update_status(pid: i32, status: i32) {
-    let mut shell = SHELL.shell.lock().unwrap();
+    let shell = SHELL.shell.lock().unwrap();
     let mut jobs = shell.jobs.lock().unwrap();
 
     for job in jobs.iter_mut() {
@@ -22,7 +22,6 @@ pub fn job_update_status(pid: i32, status: i32) {
                 } else {
                     proc.state = ProcState::Running;
                 }
-
                 let all_done = job.procs.iter().all(|p| p.state == ProcState::Done);
                 let any_stopped = job.procs.iter().any(|p| p.state == ProcState::Stopped);
 
@@ -111,7 +110,7 @@ pub fn builtin_jobs(_args: &[String]) -> i32 {
 }
 
 pub fn builtin_fg(_args: &[String]) -> i32 {
-    let mut shell = SHELL.shell.lock().unwrap();
+    let shell = SHELL.shell.lock().unwrap();
     let mut jobs = shell.jobs.lock().unwrap();
 
     if jobs.is_empty() {
@@ -150,7 +149,7 @@ pub fn builtin_fg(_args: &[String]) -> i32 {
 }
 
 pub fn builtin_bg(_args: &[String]) -> i32 {
-    let mut shell = SHELL.shell.lock().unwrap();
+    let shell = SHELL.shell.lock().unwrap();
     let mut jobs = shell.jobs.lock().unwrap();
 
     if jobs.is_empty() {

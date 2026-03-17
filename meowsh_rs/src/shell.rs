@@ -2,7 +2,6 @@ use crate::types::{
     Shell, Var, OPT_ALLEXPORT, OPT_ERREXIT, OPT_HASHALL, OPT_INTERACTIVE, OPT_MONITOR, OPT_NOEXEC,
     OPT_NOGLOB, OPT_NOUNSET, OPT_VERBOSE, OPT_XTRACE, VAR_EXPORT,
 };
-use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Mutex;

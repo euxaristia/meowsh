@@ -1,13 +1,12 @@
-use crate::expand::{expand_all, run_command_output};
+use crate::expand::expand_all;
 use crate::jobs::{builtin_bg, builtin_fg, builtin_jobs, job_wait_foreground};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::shell::{var_get, var_set, SHELL};
 use crate::types::{ASTNode, Job, JobState, ProcState, Redir};
-use std::collections::HashMap;
 use std::env;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::{self, OpenOptions};
+use std::io;
 use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
