@@ -1,4 +1,4 @@
-use libc::isatty;
+use libc::{isatty, signal, SIGINT, SIGQUIT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIG_IGN};
 use meowsh_rs::exec::execute_line;
 use meowsh_rs::lineedit::{run_interactive, run_noninteractive};
 use meowsh_rs::shell::{shell_init, SHELL};
@@ -7,6 +7,16 @@ use std::env;
 
 fn main() {
     shell_init();
+
+    // Ignore terminal control signals (like the Go version)
+    unsafe {
+        signal(SIGINT, SIG_IGN);
+        signal(SIGTERM, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
+        signal(SIGTSTP, SIG_IGN);
+        signal(SIGTTIN, SIG_IGN);
+        signal(SIGTTOU, SIG_IGN);
+    }
 
     // Check if interactive
     let interactive = unsafe { isatty(0) != 0 };
