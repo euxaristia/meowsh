@@ -256,6 +256,7 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
         "trap" => builtin_trap(&args[1..]),
         "ulimit" => builtin_ulimit(&args[1..]),
         "readonly" => builtin_readonly(&args[1..]),
+        "history" => builtin_history(&args[1..]),
         _ => -1,
     };
 
@@ -843,6 +844,15 @@ fn builtin_test(args: &[String]) -> i32 {
             }
             _ => return 1,
         }
+    }
+    0
+}
+
+fn builtin_history(_args: &[String]) -> i32 {
+    let shell = SHELL.shell.lock().unwrap();
+    let history = shell.history.lock().unwrap();
+    for (i, line) in history.iter().enumerate() {
+        println!("{:5}  {}", i + 1, line);
     }
     0
 }

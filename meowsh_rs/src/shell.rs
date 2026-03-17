@@ -1,4 +1,7 @@
-use crate::types::{Shell, Var, OPT_INTERACTIVE, VAR_EXPORT};
+use crate::types::{
+    Shell, Var, OPT_ALLEXPORT, OPT_ERREXIT, OPT_HASHALL, OPT_INTERACTIVE, OPT_MONITOR, OPT_NOEXEC,
+    OPT_NOGLOB, OPT_NOUNSET, OPT_VERBOSE, OPT_XTRACE, VAR_EXPORT,
+};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -88,6 +91,13 @@ pub fn shell_init() {
             flags: 0,
         },
     );
+    shell.vars.insert(
+        "SHLVL".to_string(),
+        Var {
+            value: "1".to_string(),
+            flags: 0,
+        },
+    );
 
     if let Some(home) = shell.vars.get("HOME") {
         shell.history_file = PathBuf::from(&home.value)
@@ -112,8 +122,35 @@ pub fn var_get(name: &str) -> String {
         "@" | "*" => return shell.pos_params.join(" "),
         "-" => {
             let mut flags = String::new();
+            if shell.opts & OPT_ALLEXPORT != 0 {
+                flags.push('a');
+            }
+            if shell.opts & OPT_ERREXIT != 0 {
+                flags.push('e');
+            }
+            if shell.opts & OPT_NOGLOB != 0 {
+                flags.push('f');
+            }
+            if shell.opts & OPT_HASHALL != 0 {
+                flags.push('h');
+            }
             if shell.opts & OPT_INTERACTIVE != 0 {
                 flags.push('i');
+            }
+            if shell.opts & OPT_MONITOR != 0 {
+                flags.push('m');
+            }
+            if shell.opts & OPT_NOEXEC != 0 {
+                flags.push('n');
+            }
+            if shell.opts & OPT_NOUNSET != 0 {
+                flags.push('u');
+            }
+            if shell.opts & OPT_VERBOSE != 0 {
+                flags.push('v');
+            }
+            if shell.opts & OPT_XTRACE != 0 {
+                flags.push('x');
             }
             return flags;
         }
