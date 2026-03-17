@@ -1,43 +1,37 @@
 use crate::shell::build_prompt;
-use rustyline::{history::FileHistory, Editor};
+use std::io::{self, Read, Write};
 
 pub fn run_interactive() {
-    let mut rl: Editor<(), FileHistory> = Editor::new().unwrap();
+    let mut stdin = io::stdin();
 
     loop {
         let prompt = build_prompt();
+        print!("{}", prompt);
+        io::Write::flush(&mut io::stdout()).unwrap();
 
-        match rl.readline(&prompt) {
-            Ok(line) => {
-                if line.trim().is_empty() {
-                    continue;
-                }
-
-                rl.add_history_entry(&line);
-
-                crate::exec::execute_line(&line);
-            }
-            Err(rustyline::error::ReadlineError::Interrupted) => {
-                println!("^C");
-                continue;
-            }
-            Err(rustyline::error::ReadlineError::Eof) => {
+        let mut line = String::new();
+        match stdin.read_line(&mut line) {
+            Ok(0) => {
                 println!("logout");
                 break;
             }
+            Ok(_) => {
+                line = line.trim_end().to_string();
+                if line.is_empty() {
+                    continue;
+                }
+
+                crate::exec::execute_line(&line);
+            }
             Err(err) => {
                 eprintln!("Error: {:?}", err);
-                // Try to continue on I/O errors
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                continue;
+                break;
             }
         }
     }
 }
 
 pub fn run_noninteractive() {
-    use std::io::{self, Read};
-
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer).ok();
 
