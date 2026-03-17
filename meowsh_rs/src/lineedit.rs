@@ -21,7 +21,7 @@ impl MeowshHelper {
         if is_cmd_position {
             let current = parts.last().unwrap_or(&"");
 
-            for (name, _) in &shell.aliases {
+            for name in shell.aliases.keys() {
                 if name.starts_with(current) {
                     completions.push(rustyline::completion::Pair {
                         display: name.clone(),

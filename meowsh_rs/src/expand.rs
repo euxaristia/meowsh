@@ -6,8 +6,8 @@ pub fn expand_all(s: &str) -> String {
     let s = expand_tilde(&s);
     let s = expand_command_substitution(&s);
     let s = expand_variable(&s);
-    let s = remove_quotes(&s);
-    s
+
+    remove_quotes(&s)
 }
 
 pub fn expand_arithmetic(s: &str) -> String {
@@ -23,50 +23,48 @@ pub fn expand_arithmetic(s: &str) -> String {
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
-        if c == '$' {
+        if c == '$' && chars.peek() == Some(&'(') {
+            chars.next();
             if chars.peek() == Some(&'(') {
                 chars.next();
-                if chars.peek() == Some(&'(') {
-                    chars.next();
-                    let mut depth = 1;
-                    let mut inner = String::new();
-                    while let Some(ch) = chars.next() {
-                        if ch == '(' && chars.peek() == Some(&'(') {
-                            chars.next();
-                            inner.push(ch);
-                            depth += 1;
-                        } else if ch == ')' && chars.peek() == Some(&')') {
-                            chars.next();
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            inner.push(ch);
-                        } else {
-                            inner.push(ch);
-                        }
-                    }
-                    let val = eval_arithmetic(&inner);
-                    result.push_str(&val.to_string());
-                    continue;
-                } else {
-                    let mut inner = String::new();
-                    let mut depth = 1;
-                    while let Some(ch) = chars.next() {
-                        if ch == '(' {
-                            depth += 1;
-                        } else if ch == ')' {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
+                let mut depth = 1;
+                let mut inner = String::new();
+                while let Some(ch) = chars.next() {
+                    if ch == '(' && chars.peek() == Some(&'(') {
+                        chars.next();
+                        inner.push(ch);
+                        depth += 1;
+                    } else if ch == ')' && chars.peek() == Some(&')') {
+                        chars.next();
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
                         }
                         inner.push(ch);
+                    } else {
+                        inner.push(ch);
                     }
-                    let out = run_command_output(&inner);
-                    result.push_str(&out);
-                    continue;
                 }
+                let val = eval_arithmetic(&inner);
+                result.push_str(&val.to_string());
+                continue;
+            } else {
+                let mut inner = String::new();
+                let mut depth = 1;
+                for ch in chars.by_ref() {
+                    if ch == '(' {
+                        depth += 1;
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    inner.push(ch);
+                }
+                let out = run_command_output(&inner);
+                result.push_str(&out);
+                continue;
             }
         }
         result.push(c);
@@ -88,7 +86,7 @@ pub fn eval_arithmetic(s: &str) -> i64 {
     }
 
     let mut result = 0i64;
-    let mut current = 0i64;
+    let mut current;
     let mut op = '+';
     let mut num_buf = String::new();
 
@@ -106,10 +104,8 @@ pub fn eval_arithmetic(s: &str) -> i64 {
                 '+' => result += current,
                 '-' => result -= current,
                 '*' => result *= current,
-                '/' => {
-                    if current != 0 {
-                        result /= current;
-                    }
+                '/' if current != 0 => {
+                    result /= current;
                 }
                 _ => {}
             }
@@ -126,10 +122,8 @@ pub fn eval_arithmetic(s: &str) -> i64 {
             '+' => result += current,
             '-' => result -= current,
             '*' => result *= current,
-            '/' => {
-                if current != 0 {
-                    result /= current;
-                }
+            '/' if current != 0 => {
+                result /= current;
             }
             _ => {}
         }
@@ -167,43 +161,41 @@ pub fn expand_command_substitution(s: &str) -> String {
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
-        if c == '$' {
+        if c == '$' && chars.peek() == Some(&'(') {
+            chars.next();
             if chars.peek() == Some(&'(') {
-                chars.next();
-                if chars.peek() == Some(&'(') {
-                    result.push('$');
-                    result.push('(');
-                    result.push('(');
-                    while let Some(ch) = chars.next() {
-                        result.push(ch);
-                        if ch == ')' && chars.peek() == Some(&')') {
-                            result.push(chars.next().unwrap());
+                result.push('$');
+                result.push('(');
+                result.push('(');
+                while let Some(ch) = chars.next() {
+                    result.push(ch);
+                    if ch == ')' && chars.peek() == Some(&')') {
+                        result.push(chars.next().unwrap());
+                        break;
+                    }
+                }
+            } else {
+                let mut inner = String::new();
+                let mut depth = 1;
+                for ch in chars.by_ref() {
+                    if ch == '(' {
+                        depth += 1;
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
                             break;
                         }
                     }
-                } else {
-                    let mut inner = String::new();
-                    let mut depth = 1;
-                    while let Some(ch) = chars.next() {
-                        if ch == '(' {
-                            depth += 1;
-                        } else if ch == ')' {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                        }
-                        inner.push(ch);
-                    }
-                    let out = run_command_output(&inner);
-                    result.push_str(&out);
+                    inner.push(ch);
                 }
-                continue;
+                let out = run_command_output(&inner);
+                result.push_str(&out);
             }
+            continue;
         }
         if c == '`' {
             let mut inner = String::new();
-            while let Some(ch) = chars.next() {
+            for ch in chars.by_ref() {
                 if ch == '`' {
                     break;
                 }
@@ -240,7 +232,7 @@ pub fn expand_variable(s: &str) -> String {
             if chars.peek() == Some(&'{') {
                 chars.next();
                 let mut expr = String::new();
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if ch == '}' {
                         break;
                     }

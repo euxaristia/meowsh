@@ -113,6 +113,7 @@ fn exec_simple(node: &ASTNode) -> i32 {
     status
 }
 
+#[allow(clippy::suspicious_open_options)]
 fn handle_redirections(redirs: &[Redir]) -> Option<SavedFds> {
     if redirs.is_empty() {
         return None;
@@ -135,12 +136,7 @@ fn handle_redirections(redirs: &[Redir]) -> Option<SavedFds> {
                 }
             }
             ">>" => {
-                if let Ok(f) = OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .write(true)
-                    .open(&target)
-                {
+                if let Ok(f) = OpenOptions::new().append(true).create(true).open(&target) {
                     let fd = f.into_raw_fd();
                     unsafe {
                         libc::dup2(fd, 1);
@@ -306,16 +302,16 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
                 unsafe {
                     libc::tcsetpgrp(0, pid);
                 }
-                return job_wait_foreground(&job);
+                job_wait_foreground(&job)
             } else {
                 println!("[{}] {}", job_id, pid);
                 SHELL.shell.lock().unwrap().last_bg_pid = pid;
-                return 0;
+                0
             }
         }
         Err(e) => {
             eprintln!("meowsh: {}", e);
-            return 1;
+            1
         }
     }
 }
@@ -382,10 +378,8 @@ fn exec_and_or(node: &ASTNode) -> i32 {
         if left_status != 0 {
             return left_status;
         }
-    } else if node.conn == "||" {
-        if left_status == 0 {
-            return left_status;
-        }
+    } else if node.conn == "||" && left_status == 0 {
+        return left_status;
     }
 
     if let Some(ref right) = node.right {

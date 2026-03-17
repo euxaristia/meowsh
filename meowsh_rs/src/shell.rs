@@ -206,6 +206,6 @@ pub fn build_prompt() -> String {
     let user = if user.is_empty() { "meow" } else { &user };
     let pwd = var_get("PWD");
     let pwd = if pwd.is_empty() { "?" } else { &pwd };
-    let short_pwd = shorten_path(&pwd);
+    let short_pwd = shorten_path(pwd);
     format!("\x1b[32m{}\x1b[0m \x1b[34m{}\x1b[0m 𓃠  ", user, short_pwd)
 }

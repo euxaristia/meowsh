@@ -20,16 +20,16 @@ fn main() {
 
     // Check if interactive
     let interactive = unsafe { isatty(0) != 0 };
-    unsafe { SHELL.shell.lock().unwrap().interactive = interactive };
+    SHELL.shell.lock().unwrap().interactive = interactive;
 
     if interactive {
-        unsafe { SHELL.shell.lock().unwrap().opts |= OPT_INTERACTIVE };
+        SHELL.shell.lock().unwrap().opts |= OPT_INTERACTIVE;
     }
 
     // Parse arguments
     let args: Vec<String> = env::args().collect();
     if !args.is_empty() {
-        unsafe { SHELL.shell.lock().unwrap().argv0 = args[0].clone() };
+        SHELL.shell.lock().unwrap().argv0 = args[0].clone();
     }
 
     // Handle -c option
@@ -40,7 +40,7 @@ fn main() {
         return;
     }
 
-    if unsafe { SHELL.shell.lock().unwrap().interactive } {
+    if SHELL.shell.lock().unwrap().interactive {
         run_interactive();
     } else {
         run_noninteractive();

@@ -11,9 +11,9 @@ pub fn job_update_status(pid: i32, status: i32) {
         for proc in job.procs.iter_mut() {
             if proc.pid == pid {
                 proc.status = status;
-                let stopped = unsafe { libc::WIFSTOPPED(status) };
-                let exited = unsafe { libc::WIFEXITED(status) };
-                let signaled = unsafe { libc::WIFSIGNALED(status) };
+                let stopped = libc::WIFSTOPPED(status);
+                let exited = libc::WIFEXITED(status);
+                let signaled = libc::WIFSIGNALED(status);
 
                 if stopped {
                     proc.state = ProcState::Stopped;
@@ -49,7 +49,7 @@ pub fn job_wait_foreground(job: &Job) -> i32 {
 
         job_update_status(pid, status);
 
-        if unsafe { libc::WIFSTOPPED(status) } {
+        if libc::WIFSTOPPED(status) {
             println!("\n[{}]+  Stopped\t{}", job.id, job.cmd_text);
             let shell = SHELL.shell.lock().unwrap();
             let mut jobs = shell.jobs.lock().unwrap();
@@ -75,10 +75,10 @@ pub fn job_wait_foreground(job: &Job) -> i32 {
 
     let status = if let Some(proc) = job.procs.last() {
         let ws = proc.status;
-        if unsafe { libc::WIFEXITED(ws) } {
-            unsafe { libc::WEXITSTATUS(ws) }
-        } else if unsafe { libc::WIFSIGNALED(ws) } {
-            128 + unsafe { libc::WTERMSIG(ws) as i32 }
+        if libc::WIFEXITED(ws) {
+            libc::WEXITSTATUS(ws)
+        } else if libc::WIFSIGNALED(ws) {
+            128 + libc::WTERMSIG(ws) as i32
         } else {
             0
         }
@@ -139,7 +139,7 @@ pub fn builtin_fg(_args: &[String]) -> i32 {
             break;
         }
         job_update_status(pid, status);
-        if unsafe { libc::WIFSTOPPED(status) } {
+        if libc::WIFSTOPPED(status) {
             println!("\n[{}]+  Stopped\t{}", job_id, cmd_text);
             break;
         }

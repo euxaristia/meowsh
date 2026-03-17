@@ -67,7 +67,7 @@ impl Lexer {
         }
 
         if c == '#' && (self.pos == 0 || self.input[self.pos - 1..].starts_with('\n')) {
-            while self.pos < self.input.len() && self.input[self.pos..].chars().next() != Some('\n')
+            while self.pos < self.input.len() && !self.input[self.pos..].starts_with('\n')
             {
                 self.pos += 1;
             }
@@ -275,7 +275,7 @@ impl Lexer {
             if c == '\'' {
                 self.pos += 1;
                 while self.pos < self.input.len()
-                    && self.input[self.pos..].chars().next() != Some('\'')
+                    && !self.input[self.pos..].starts_with('\'')
                 {
                     self.pos += 1;
                 }
@@ -308,7 +308,7 @@ impl Lexer {
             if c == '`' {
                 self.pos += 1;
                 while self.pos < self.input.len()
-                    && self.input[self.pos..].chars().next() != Some('`')
+                    && !self.input[self.pos..].starts_with('`')
                 {
                     self.pos += 1;
                 }
@@ -325,7 +325,7 @@ impl Lexer {
                     if nc == '(' {
                         self.pos += 1;
                         if self.pos < self.input.len()
-                            && self.input[self.pos..].chars().next() == Some('(')
+                            && self.input[self.pos..].starts_with('(')
                         {
                             self.pos += 1;
                             let mut depth = 1;
@@ -334,19 +334,18 @@ impl Lexer {
                                 self.pos += 1;
                                 if ch == '(' {
                                     if self.pos < self.input.len()
-                                        && self.input[self.pos..].chars().next() == Some('(')
+                                        && self.input[self.pos..].starts_with('(')
                                     {
                                         self.pos += 1;
                                         depth += 1;
                                     }
-                                } else if ch == ')' {
-                                    if self.pos < self.input.len()
-                                        && self.input[self.pos..].chars().next() == Some(')')
+                                } else if ch == ')'
+                                    && self.pos < self.input.len()
+                                        && self.input[self.pos..].starts_with(')')
                                     {
                                         self.pos += 1;
                                         depth -= 1;
                                     }
-                                }
                             }
                             continue;
                         }
@@ -365,7 +364,7 @@ impl Lexer {
                     }
                     if nc == '{' {
                         while self.pos < self.input.len()
-                            && self.input[self.pos..].chars().next() != Some('}')
+                            && !self.input[self.pos..].starts_with('}')
                         {
                             self.pos += 1;
                         }
