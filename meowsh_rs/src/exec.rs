@@ -28,11 +28,22 @@ pub fn execute_line(line: &str) {
 }
 
 pub fn exec_node(node: &ASTNode) -> i32 {
-    if node.node_type == "empty"
-        || (node.args.is_empty()
-            && node.assigns.is_empty()
-            && node.pipes.is_empty()
-            && node.loop_var.is_empty())
+    // Check if this is an empty node
+    if node.node_type == "empty" {
+        return 0;
+    }
+
+    // For nodes that use left/right (and_or, etc.), don't apply the empty check
+    let uses_left_right = matches!(
+        node.node_type.as_str(),
+        "and_or" | "if" | "while" | "until" | "for" | "function" | "case"
+    );
+
+    if !uses_left_right
+        && node.args.is_empty()
+        && node.assigns.is_empty()
+        && node.pipes.is_empty()
+        && node.loop_var.is_empty()
     {
         return 0;
     }
@@ -789,10 +800,7 @@ fn builtin_test(args: &[String]) -> i32 {
     if args.is_empty() {
         return 1;
     }
-    let args: Vec<String> = args
-        .iter()
-        .map(|a| if a == "]" { String::new() } else { a.clone() })
-        .collect();
+    let args: Vec<String> = args.iter().filter(|a| *a != "]").cloned().collect();
     if args.len() == 1 {
         return if !args[0].is_empty() { 0 } else { 1 };
     }
@@ -817,6 +825,38 @@ fn builtin_test(args: &[String]) -> i32 {
             }
             "-ne" => {
                 return if args[0].parse::<i32>().unwrap_or(0) != args[2].parse::<i32>().unwrap_or(0)
+                {
+                    0
+                } else {
+                    1
+                }
+            }
+            "-lt" => {
+                return if args[0].parse::<i32>().unwrap_or(0) < args[2].parse::<i32>().unwrap_or(0)
+                {
+                    0
+                } else {
+                    1
+                }
+            }
+            "-le" => {
+                return if args[0].parse::<i32>().unwrap_or(0) <= args[2].parse::<i32>().unwrap_or(0)
+                {
+                    0
+                } else {
+                    1
+                }
+            }
+            "-gt" => {
+                return if args[0].parse::<i32>().unwrap_or(0) > args[2].parse::<i32>().unwrap_or(0)
+                {
+                    0
+                } else {
+                    1
+                }
+            }
+            "-ge" => {
+                return if args[0].parse::<i32>().unwrap_or(0) >= args[2].parse::<i32>().unwrap_or(0)
                 {
                     0
                 } else {

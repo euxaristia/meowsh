@@ -166,6 +166,16 @@ pub fn var_get(name: &str) -> String {
     String::new()
 }
 
+pub fn var_get_if_exists(name: &str) -> Option<i64> {
+    let shell = SHELL.shell.lock().unwrap();
+    if let Some(v) = shell.vars.get(name) {
+        if let Ok(n) = v.value.parse::<i64>() {
+            return Some(n);
+        }
+    }
+    None
+}
+
 pub fn var_set(name: &str, value: &str, _export: bool) {
     let mut shell = SHELL.shell.lock().unwrap();
     shell.vars.insert(

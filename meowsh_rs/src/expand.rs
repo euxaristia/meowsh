@@ -1,4 +1,4 @@
-use crate::shell::{var_get, var_set, SHELL};
+use crate::shell::{var_get, var_get_if_exists, var_set, SHELL};
 use std::process::Command;
 
 pub fn expand_all(s: &str) -> String {
@@ -11,11 +11,25 @@ pub fn expand_all(s: &str) -> String {
 }
 
 pub fn expand_arithmetic(s: &str) -> String {
+    // Handle $((...)) arithmetic expansion
+    if s.starts_with("$(((") && s.ends_with("))") {
+        // Pattern: $((...)) -> extract "..."
+        let inner = &s[4..s.len() - 2];
+        let val = eval_arithmetic(inner);
+        return val.to_string();
+    }
+
+    // Handle $(...) command substitution
     if s.starts_with("$(") && s.ends_with(')') {
         let inner = &s[2..s.len() - 1];
         if inner.starts_with('(') && inner.ends_with(')') {
+            // It's $((...)), evaluate the content (remove the extra parentheses)
             let val = eval_arithmetic(&inner[1..inner.len() - 1]);
             return val.to_string();
+        } else {
+            // It's $(...), run command substitution
+            let output = run_command_output(inner);
+            return output.trim().to_string();
         }
     }
 
@@ -78,58 +92,45 @@ pub fn eval_arithmetic(s: &str) -> i64 {
         return 0;
     }
 
-    let expanded = expand_variable(s);
-    let expanded = expanded.trim();
+    // Check if it's just a number
+    if let Ok(n) = s.parse::<i64>() {
+        return n;
+    }
 
+    // Check if it's a variable reference (without $)
+    if let Some(val) = var_get_if_exists(s) {
+        return val;
+    }
+
+    // Handle operators recursively
+    if s.contains('+') {
+        let parts: Vec<&str> = s.splitn(2, '+').collect();
+        return eval_arithmetic(parts[0]) + eval_arithmetic(parts[1]);
+    }
+    if s.contains('-') {
+        let parts: Vec<&str> = s.splitn(2, '-').collect();
+        return eval_arithmetic(parts[0]) - eval_arithmetic(parts[1]);
+    }
+    if s.contains('*') {
+        let parts: Vec<&str> = s.splitn(2, '*').collect();
+        return eval_arithmetic(parts[0]) * eval_arithmetic(parts[1]);
+    }
+    if s.contains('/') {
+        let parts: Vec<&str> = s.splitn(2, '/').collect();
+        let divisor = eval_arithmetic(parts[1]);
+        if divisor == 0 {
+            return 0;
+        }
+        return eval_arithmetic(parts[0]) / divisor;
+    }
+
+    // Try variable expansion with $
+    let expanded = expand_variable(&format!("${}", s));
     if let Ok(n) = expanded.parse::<i64>() {
         return n;
     }
 
-    let mut result = 0i64;
-    let mut current;
-    let mut op = '+';
-    let mut num_buf = String::new();
-
-    for c in expanded.chars() {
-        if c.is_ascii_digit() {
-            num_buf.push(c);
-            continue;
-        }
-
-        if !num_buf.is_empty() {
-            current = num_buf.parse().unwrap_or(0);
-            num_buf.clear();
-
-            match op {
-                '+' => result += current,
-                '-' => result -= current,
-                '*' => result *= current,
-                '/' if current != 0 => {
-                    result /= current;
-                }
-                _ => {}
-            }
-        }
-
-        if c == '+' || c == '-' || c == '*' || c == '/' {
-            op = c;
-        }
-    }
-
-    if !num_buf.is_empty() {
-        current = num_buf.parse().unwrap_or(0);
-        match op {
-            '+' => result += current,
-            '-' => result -= current,
-            '*' => result *= current,
-            '/' if current != 0 => {
-                result /= current;
-            }
-            _ => {}
-        }
-    }
-
-    result
+    0
 }
 
 pub fn expand_tilde(s: &str) -> String {
