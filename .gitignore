@@ -1,4 +1,1 @@
-meowsh
-*.test
-test_multiline.txt
-test_redir.txt
+target/

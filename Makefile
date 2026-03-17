@@ -4,8 +4,8 @@ PREFIX ?= /usr/local
 all: $(TARGET)
 
 $(TARGET):
-	cd meowsh_rs && cargo build --release
-	cp meowsh_rs/target/release/meowsh_rs $(TARGET)
+	cargo build --release
+	cp target/release/meowsh $(TARGET)
 
 install: $(TARGET)
 	install -D -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)

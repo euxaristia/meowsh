@@ -1,8 +1,8 @@
 use libc::{isatty, signal, SIGINT, SIGQUIT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIG_IGN};
-use meowsh_rs::exec::execute_line;
-use meowsh_rs::lineedit::{run_interactive, run_noninteractive};
-use meowsh_rs::shell::{shell_init, SHELL};
-use meowsh_rs::types::OPT_INTERACTIVE;
+use meowsh::exec::execute_line;
+use meowsh::lineedit::{run_interactive, run_noninteractive};
+use meowsh::shell::{shell_init, SHELL};
+use meowsh::types::OPT_INTERACTIVE;
 use std::env;
 
 fn main() {
