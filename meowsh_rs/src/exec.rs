@@ -30,7 +30,10 @@ pub fn execute_line(line: &str) {
 
 pub fn exec_node(node: &ASTNode) -> i32 {
     if node.node_type == "empty"
-        || (node.args.is_empty() && node.assigns.is_empty() && node.pipes.is_empty())
+        || (node.args.is_empty()
+            && node.assigns.is_empty()
+            && node.pipes.is_empty()
+            && node.loop_var.is_empty())
     {
         return 0;
     }
