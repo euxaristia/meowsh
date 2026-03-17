@@ -77,7 +77,7 @@ pub fn job_wait_foreground(job: &Job) -> i32 {
 
     unsafe {
         let shell_pgid = SHELL.shell.lock().unwrap().shell_pid;
-        libc::tcsetpgrp(0, shell_pgid as libc::uintptr_t);
+        libc::tcsetpgrp(0, shell_pgid);
     }
 
     status

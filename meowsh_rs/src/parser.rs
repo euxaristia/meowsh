@@ -75,8 +75,7 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_token(&mut self) -> Token {
-        // Simplified - we'd need position saving for proper implementation
-        self.lexer.next_token()
+        self.lexer.peek_token()
     }
 
     fn parse_command(&mut self) -> Option<ASTNode> {
@@ -260,7 +259,7 @@ impl<'a> Parser<'a> {
             match tok.value.as_str() {
                 "else" => {
                     self.lexer.next_token();
-                    self.parse_command_list(false).0
+                    self.parse_command_list(false).0.map(Box::new)
                 }
                 "elif" => Some(Box::new(self.parse_if())),
                 _ => None,

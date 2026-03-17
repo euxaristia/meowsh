@@ -1,8 +1,36 @@
 use crate::types::{Token, TokenType};
 
+fn is_operator(c: char) -> bool {
+    matches!(c, '|' | '&' | ';' | '<' | '>' | '(' | ')')
+}
+
+fn is_assignment(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    for (i, c) in s.chars().enumerate() {
+        if c == '=' {
+            return i > 0;
+        }
+        if !c.is_alphabetic() && !c.is_ascii_digit() && c != '_' {
+            return false;
+        }
+    }
+    false
+}
+
 pub struct Lexer {
     input: String,
     pos: usize,
+}
+
+impl Clone for Lexer {
+    fn clone(&self) -> Self {
+        Lexer {
+            input: self.input.clone(),
+            pos: self.pos,
+        }
+    }
 }
 
 impl Lexer {
@@ -11,6 +39,11 @@ impl Lexer {
             input: input.to_string(),
             pos: 0,
         }
+    }
+
+    pub fn peek_token(&mut self) -> Token {
+        let mut clone = self.clone();
+        clone.next_token()
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -72,10 +105,6 @@ impl Lexer {
                 break;
             }
         }
-    }
-
-    fn is_operator(c: char) -> bool {
-        matches!(c, '|' | '&' | ';' | '<' | '>' | '(' | ')')
     }
 
     fn read_io_number(&mut self) -> Token {
@@ -365,21 +394,6 @@ impl Lexer {
 
         Token { token_type, value }
     }
-}
-
-fn is_assignment(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    for (i, c) in s.chars().enumerate() {
-        if c == '=' {
-            return i > 0;
-        }
-        if !c.is_alphabetic() && !c.is_ascii_digit() && c != '_' {
-            return false;
-        }
-    }
-    false
 }
 
 pub fn tokenize(line: &str) -> Vec<Token> {

@@ -283,32 +283,42 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
         Ok(child) => {
             let pid = child.id() as i32;
 
+            let job_id = *SHELL.shell.lock().unwrap().next_job_id.lock().unwrap();
+            let cmd_text = args.join(" ");
+            let foreground_flag = foreground;
+
             let job = Job {
-                id: *SHELL.shell.lock().unwrap().next_job_id.lock().unwrap(),
+                id: job_id,
                 pgid: pid,
                 procs: vec![crate::types::Process {
                     pid,
                     status: 0,
                     state: ProcState::Running,
-                    cmd: args.join(" "),
+                    cmd: cmd_text.clone(),
                 }],
                 state: JobState::Running,
                 notified: false,
-                foreground,
-                cmd_text: args.join(" "),
+                foreground: foreground_flag,
+                cmd_text: cmd_text.clone(),
             };
 
             *SHELL.shell.lock().unwrap().next_job_id.lock().unwrap() += 1;
-            SHELL.shell.lock().unwrap().jobs.lock().unwrap().push(job);
+            SHELL
+                .shell
+                .lock()
+                .unwrap()
+                .jobs
+                .lock()
+                .unwrap()
+                .push(job.clone());
 
             if foreground {
                 unsafe {
-                    let pgid = pid;
-                    libc::tcsetpgrp(0, pgid as libc::uintptr_t);
+                    libc::tcsetpgrp(0, pid);
                 }
                 return job_wait_foreground(&job);
             } else {
-                println!("[{}] {}", job.id, pid);
+                println!("[{}] {}", job_id, pid);
                 SHELL.shell.lock().unwrap().last_bg_pid = pid;
                 return 0;
             }
@@ -594,7 +604,9 @@ fn builtin_unset(args: &[String]) -> i32 {
     for arg in args {
         SHELL.shell.lock().unwrap().vars.remove(arg);
     }
-    env::remove_var(args[0]);
+    if !args.is_empty() {
+        env::remove_var(&args[0]);
+    }
     0
 }
 
@@ -727,7 +739,7 @@ fn builtin_umask(args: &[String]) -> i32 {
         println!("{:04o}", mask);
         return 0;
     }
-    let mask = u16::from_str_radix(args[0], 8).unwrap_or(0);
+    let mask = u16::from_str_radix(&args[0], 8).unwrap_or(0) as u32;
     unsafe { libc::umask(mask) };
     0
 }
