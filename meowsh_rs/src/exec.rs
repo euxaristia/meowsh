@@ -9,6 +9,7 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -278,6 +279,7 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
     cmd.stdin(Stdio::inherit());
     cmd.stdout(Stdio::inherit());
     cmd.stderr(Stdio::inherit());
+    cmd.process_group(0);
 
     match cmd.spawn() {
         Ok(child) => {
