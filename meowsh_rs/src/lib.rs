@@ -1,17 +1,17 @@
-pub mod exec;
-pub mod expand;
-pub mod jobs;
+pub mod types;
 pub mod lexer;
-pub mod lineedit;
 pub mod parser;
 pub mod shell;
-pub mod types;
+pub mod expand;
+pub mod exec;
+pub mod jobs;
+pub mod lineedit;
 
-pub use exec::*;
-pub use expand::*;
-pub use jobs::*;
+pub use types::*;
 pub use lexer::*;
-pub use lineedit::*;
 pub use parser::*;
 pub use shell::*;
-pub use types::*;
+pub use expand::*;
+pub use exec::*;
+pub use jobs::*;
+pub use lineedit::*;
