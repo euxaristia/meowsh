@@ -29,4 +29,4 @@ After building, you can start the shell with:
 
 ## Development
 
-The source code is written in Go and located in the `src/` directory.
+The source code is written in Rust and located in the `meowsh_rs/src/` directory.
