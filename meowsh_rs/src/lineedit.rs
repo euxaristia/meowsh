@@ -27,7 +27,9 @@ pub fn run_interactive() {
             }
             Err(err) => {
                 eprintln!("Error: {:?}", err);
-                break;
+                // Try to continue on I/O errors
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
             }
         }
     }
