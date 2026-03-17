@@ -19,22 +19,7 @@ pub fn execute_line(line: &str) {
         return;
     }
 
-    let words: Vec<&str> = line.split_whitespace().collect();
-    let mut cmd_line = line.to_string();
-
-    if let Some(first) = words.first() {
-        let aliases = SHELL.shell.lock().unwrap().aliases.clone();
-        if let Some(alias) = aliases.get(*first) {
-            let rest = words[1..].join(" ");
-            cmd_line = if rest.is_empty() {
-                alias.clone()
-            } else {
-                format!("{} {}", alias, rest)
-            };
-        }
-    }
-
-    let mut lexer = Lexer::new(&cmd_line);
+    let mut lexer = Lexer::new(line);
     let mut parser = Parser::new(&mut lexer);
 
     while let Some(node) = parser.parse() {
@@ -80,7 +65,7 @@ fn exec_simple(node: &ASTNode) -> i32 {
         var_set(name, &expand_all(value), false);
     }
 
-    let expanded_args: Vec<String> = node.args.iter().map(|arg| expand_all(arg)).collect();
+    let mut expanded_args: Vec<String> = node.args.iter().map(|arg| expand_all(arg)).collect();
 
     if expanded_args.is_empty() {
         return 0;
@@ -94,7 +79,7 @@ fn exec_simple(node: &ASTNode) -> i32 {
             let parts: Vec<&str> = alias.split_whitespace().collect();
             let mut new_args: Vec<String> = parts.iter().map(|s| s.to_string()).collect();
             new_args.extend(expanded_args[1..].to_vec());
-            // expanded_args = new_args;
+            expanded_args = new_args;
         }
     }
 
