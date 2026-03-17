@@ -60,6 +60,18 @@ pub fn job_wait_foreground(job: &Job) -> i32 {
             }
             break;
         }
+
+        let job_state = {
+            let shell = SHELL.shell.lock().unwrap();
+            let jobs = shell.jobs.lock().unwrap();
+            jobs.iter()
+                .find(|j| j.id == job.id)
+                .map(|j| j.state)
+                .unwrap_or(JobState::Done)
+        };
+        if job_state != JobState::Running {
+            break;
+        }
     }
 
     let status = if let Some(proc) = job.procs.last() {
