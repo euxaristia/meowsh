@@ -343,9 +343,23 @@ pub fn expand_var_expr(expr: &str) -> String {
 }
 
 pub fn expand_glob(s: &str) -> String {
-    // Basic glob expansion - just return the string as-is for now
-    // Full glob support can be added later
-    s.to_string()
+    if !s.contains('*') && !s.contains('?') && !s.contains('[') {
+        return s.to_string();
+    }
+    match glob::glob(s) {
+        Ok(entries) => {
+            let matches: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| e.to_str().map(|s| s.to_string()))
+                .collect();
+            if matches.is_empty() {
+                s.to_string()
+            } else {
+                matches.join(" ")
+            }
+        }
+        Err(_) => s.to_string(),
+    }
 }
 
 pub fn remove_quotes(s: &str) -> String {
