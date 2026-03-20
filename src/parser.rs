@@ -145,12 +145,17 @@ impl<'a> Parser<'a> {
                     }
                 }
                 let file_tok = self.lexer.next_token();
-                let redir = Redir {
-                    op,
-                    file: file_tok.value,
+                let mut redir = Redir {
+                    op: op.clone(),
+                    file: file_tok.value.clone(),
                     fd,
                     heredoc_body: String::new(),
                 };
+
+                if op == "<<" || op == "<<-" {
+                    redir.heredoc_body = self.lexer.read_heredoc(&file_tok.value, op == "<<-");
+                }
+
                 node.redirs.push(redir);
                 continue;
             }

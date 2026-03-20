@@ -259,7 +259,25 @@ pub fn expand_variable(s: &str) -> String {
                     }
                 }
                 if !name.is_empty() {
-                    result.push_str(&var_get(&name));
+                    let val = var_get(&name);
+                    if val.is_empty() {
+                        let is_unset = {
+                            let shell = SHELL.shell.lock().unwrap();
+                            if name == "$" || name == "?" || name == "!" || name == "0" || name == "#" || name == "@" || name == "*" || name == "-" {
+                                false
+                            } else {
+                                !shell.vars.contains_key(&name)
+                            }
+                        };
+                        if is_unset {
+                            let opts = SHELL.shell.lock().unwrap().opts;
+                            if opts & crate::types::OPT_NOUNSET != 0 {
+                                eprintln!("meowsh: {}: unbound variable", name);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    result.push_str(&val);
                 } else {
                     result.push('$');
                 }
@@ -286,6 +304,14 @@ pub fn expand_var_expr(expr: &str) -> String {
     let ops = vec![
         ":-", ":=", ":?", ":-", "-", "=", "?", "+", "%%", "%", "##", "#",
     ];
+
+    fn expand_pattern(word: &str) -> String {
+        let old_opts = { SHELL.shell.lock().unwrap().opts };
+        { SHELL.shell.lock().unwrap().opts |= crate::types::OPT_NOGLOB; }
+        let res = expand_variable(word);
+        { SHELL.shell.lock().unwrap().opts = old_opts; }
+        res
+    }
 
     for op in ops {
         if let Some(idx) = expr.find(op) {
@@ -325,6 +351,22 @@ pub fn expand_var_expr(expr: &str) -> String {
                         return expand_variable(word);
                     }
                     return String::new();
+                }
+                "%" => {
+                    let pattern = expand_pattern(word);
+                    return strip_suffix(&val, &pattern, false);
+                }
+                "%%" => {
+                    let pattern = expand_pattern(word);
+                    return strip_suffix(&val, &pattern, true);
+                }
+                "#" => {
+                    let pattern = expand_pattern(word);
+                    return strip_prefix(&val, &pattern, false);
+                }
+                "##" => {
+                    let pattern = expand_pattern(word);
+                    return strip_prefix(&val, &pattern, true);
                 }
                 _ => {}
             }
@@ -380,3 +422,69 @@ pub fn remove_quotes(s: &str) -> String {
     }
     result
 }
+
+fn match_pattern(s: &str, p: &str) -> bool {
+    let s_chars: Vec<char> = s.chars().collect();
+    let p_chars: Vec<char> = p.chars().collect();
+    match_chars(&s_chars, &p_chars, 0, 0)
+}
+
+fn match_chars(s: &[char], p: &[char], i: usize, j: usize) -> bool {
+    if j == p.len() {
+        return i == s.len();
+    }
+    if p[j] == '*' {
+        if match_chars(s, p, i, j + 1) {
+            return true;
+        }
+        if i < s.len() && match_chars(s, p, i + 1, j) {
+            return true;
+        }
+        return false;
+    }
+    if p[j] == '\\' && j + 1 < p.len() {
+        if i < s.len() && p[j + 1] == s[i] {
+            return match_chars(s, p, i + 1, j + 2);
+        }
+        return false;
+    }
+    if i < s.len() && (p[j] == '?' || p[j] == s[i]) {
+        return match_chars(s, p, i + 1, j + 1);
+    }
+    false
+}
+
+fn strip_suffix(val: &str, pattern: &str, longest: bool) -> String {
+    if longest {
+        for i in 0..=val.len() {
+            if match_pattern(&val[i..], pattern) {
+                return val[..i].to_string();
+            }
+        }
+    } else {
+        for i in (0..=val.len()).rev() {
+            if match_pattern(&val[i..], pattern) {
+                return val[..i].to_string();
+            }
+        }
+    }
+    val.to_string()
+}
+
+fn strip_prefix(val: &str, pattern: &str, longest: bool) -> String {
+    if longest {
+        for i in (0..=val.len()).rev() {
+            if match_pattern(&val[..i], pattern) {
+                return val[i..].to_string();
+            }
+        }
+    } else {
+        for i in 0..=val.len() {
+            if match_pattern(&val[..i], pattern) {
+                return val[i..].to_string();
+            }
+        }
+    }
+    val.to_string()
+}
+

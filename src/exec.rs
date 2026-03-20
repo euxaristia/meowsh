@@ -24,6 +24,13 @@ pub fn execute_line(line: &str) {
     while let Some(node) = parser.parse() {
         let status = exec_node(&node);
         SHELL.shell.lock().unwrap().last_status = status;
+        
+        if status != 0 {
+            let opts = SHELL.shell.lock().unwrap().opts;
+            if opts & crate::types::OPT_ERREXIT != 0 {
+                std::process::exit(status);
+            }
+        }
     }
 }
 
@@ -82,6 +89,11 @@ fn exec_simple(node: &ASTNode) -> i32 {
 
     if expanded_args.is_empty() {
         return 0;
+    }
+
+    let opts = SHELL.shell.lock().unwrap().opts;
+    if opts & crate::types::OPT_XTRACE != 0 {
+        eprintln!("+ {}", expanded_args.join(" "));
     }
 
     let name = expanded_args[0].clone();
@@ -183,6 +195,23 @@ fn handle_redirections(redirs: &[Redir]) -> Option<SavedFds> {
                             libc::dup2(fd_num, 0);
                         } else {
                             libc::dup2(fd_num, 1);
+                        }
+                    }
+                }
+            }
+            "<<" | "<<-" => {
+                if !redir.heredoc_body.is_empty() {
+                    let mut fd: [i32; 2] = [-1; 2];
+                    unsafe {
+                        if libc::pipe(fd.as_mut_ptr()) == 0 {
+                            libc::write(
+                                fd[1],
+                                redir.heredoc_body.as_ptr() as *const libc::c_void,
+                                redir.heredoc_body.len(),
+                            );
+                            libc::close(fd[1]);
+                            libc::dup2(fd[0], 0);
+                            libc::close(fd[0]);
                         }
                     }
                 }
@@ -349,33 +378,71 @@ fn exec_pipeline(node: &ASTNode) -> i32 {
         return exec_node(&node.pipes[0]);
     }
 
-    let cmd_strs: Vec<String> = node
-        .pipes
-        .iter()
-        .map(|n| {
-            if n.node_type == "simple" {
-                n.args.join(" ")
-            } else {
-                String::new()
-            }
-        })
-        .collect();
+    let mut in_fd = 0;
+    let mut pids = Vec::new();
+    let num_pipes = node.pipes.len();
 
-    let result = Command::new("sh")
-        .arg("-c")
-        .arg(cmd_strs.join(" | "))
-        .status();
-
-    match result {
-        Ok(s) => {
-            if s.success() {
-                0
-            } else {
-                s.code().unwrap_or(1)
+    for (i, pipe_node) in node.pipes.iter().enumerate() {
+        let mut fd: [i32; 2] = [-1; 2];
+        if i < num_pipes - 1 {
+            unsafe {
+                if libc::pipe(fd.as_mut_ptr()) < 0 {
+                    eprintln!("meowsh: pipe error");
+                    return 1;
+                }
             }
         }
-        Err(_) => 1,
+
+        unsafe {
+            let pid = libc::fork();
+            if pid < 0 {
+                eprintln!("meowsh: fork error");
+                return 1;
+            }
+
+            if pid == 0 {
+                // Child
+                if in_fd != 0 {
+                    libc::dup2(in_fd, 0);
+                    libc::close(in_fd);
+                }
+
+                if i < num_pipes - 1 {
+                    libc::dup2(fd[1], 1);
+                    libc::close(fd[0]);
+                    libc::close(fd[1]);
+                }
+
+                let status = exec_node(pipe_node);
+                libc::_exit(status);
+            } else {
+                // Parent
+                pids.push(pid);
+                if in_fd != 0 {
+                    libc::close(in_fd);
+                }
+                if i < num_pipes - 1 {
+                    libc::close(fd[1]);
+                    in_fd = fd[0];
+                }
+            }
+        }
     }
+
+    let mut last_status = 0;
+    for pid in pids {
+        let mut status: i32 = 0;
+        unsafe {
+            libc::waitpid(pid, &mut status, 0);
+        }
+        if libc::WIFEXITED(status) {
+            last_status = libc::WEXITSTATUS(status);
+        } else if libc::WIFSIGNALED(status) {
+            last_status = 128 + libc::WTERMSIG(status);
+        }
+    }
+
+    last_status
 }
 
 fn exec_and_or(node: &ASTNode) -> i32 {
@@ -592,6 +659,32 @@ fn builtin_set(args: &[String]) -> i32 {
         }
         return 0;
     }
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg.starts_with('-') || arg.starts_with('+') {
+            let turn_on = arg.starts_with('-');
+            for c in arg.chars().skip(1) {
+                let opt = match c {
+                    'e' => crate::types::OPT_ERREXIT,
+                    'u' => crate::types::OPT_NOUNSET,
+                    'x' => crate::types::OPT_XTRACE,
+                    'n' => crate::types::OPT_NOEXEC,
+                    'v' => crate::types::OPT_VERBOSE,
+                    _ => 0,
+                };
+                if opt != 0 {
+                    let mut shell = SHELL.shell.lock().unwrap();
+                    if turn_on {
+                        shell.opts |= opt;
+                    } else {
+                        shell.opts &= !opt;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
     0
 }
 
@@ -805,9 +898,20 @@ fn builtin_test(args: &[String]) -> i32 {
         return if !args[0].is_empty() { 0 } else { 1 };
     }
     if args.len() == 2 {
-        match args[0].as_str() {
+        let op = args[0].as_str();
+        let path_str = &args[1];
+        let path = Path::new(path_str);
+        match op {
             "-n" => return if !args[1].is_empty() { 0 } else { 1 },
             "-z" => return if args[1].is_empty() { 0 } else { 1 },
+            "-d" => return if path.is_dir() { 0 } else { 1 },
+            "-e" => return if path.exists() { 0 } else { 1 },
+            "-f" => return if path.is_file() { 0 } else { 1 },
+            "-s" => return if path.metadata().map(|m| m.len() > 0).unwrap_or(false) { 0 } else { 1 },
+            "-h" | "-L" => return if path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) { 0 } else { 1 },
+            "-r" => return unsafe { if libc::access(std::ffi::CString::new(path_str.as_bytes()).unwrap_or_default().as_ptr(), libc::R_OK) == 0 { 0 } else { 1 } },
+            "-w" => return unsafe { if libc::access(std::ffi::CString::new(path_str.as_bytes()).unwrap_or_default().as_ptr(), libc::W_OK) == 0 { 0 } else { 1 } },
+            "-x" => return unsafe { if libc::access(std::ffi::CString::new(path_str.as_bytes()).unwrap_or_default().as_ptr(), libc::X_OK) == 0 { 0 } else { 1 } },
             _ => return 1,
         }
     }

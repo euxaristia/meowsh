@@ -393,6 +393,47 @@ impl Lexer {
 
         Token { token_type, value }
     }
+
+    pub fn read_heredoc(&mut self, delimiter: &str, strip_tabs: bool) -> String {
+        let mut body = String::new();
+        let mut current_line = String::new();
+
+        // Skip the immediate newline if present
+        if self.pos < self.input.len() && self.input[self.pos..].starts_with('\n') {
+            self.pos += 1;
+        }
+
+        while self.pos < self.input.len() {
+            let c = self.input[self.pos..].chars().next().unwrap();
+            self.pos += 1;
+
+            if c == '\n' {
+                let mut check_line = current_line.as_str();
+                if strip_tabs {
+                    check_line = check_line.trim_start_matches('\t');
+                }
+                if check_line == delimiter {
+                    return body;
+                }
+                body.push_str(&current_line);
+                body.push('\n');
+                current_line.clear();
+            } else {
+                current_line.push(c);
+            }
+        }
+
+        let mut check_line = current_line.as_str();
+        if strip_tabs {
+            check_line = check_line.trim_start_matches('\t');
+        }
+        if check_line == delimiter {
+            return body;
+        }
+
+        body.push_str(&current_line);
+        body
+    }
 }
 
 pub fn tokenize(line: &str) -> Vec<Token> {
