@@ -147,6 +147,11 @@ pub fn run_interactive() {
 
     if !history_file.is_empty() {
         let _ = rl.load_history(&history_file);
+        if let Ok(content) = std::fs::read_to_string(&history_file) {
+            let shell = crate::shell::SHELL.shell.lock().unwrap();
+            let mut history = shell.history.lock().unwrap();
+            *history = content.lines().map(|s| s.to_string()).collect();
+        }
     }
 
     loop {

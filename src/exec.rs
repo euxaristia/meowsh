@@ -18,6 +18,16 @@ pub fn execute_line(line: &str) {
         return;
     }
 
+    // Add to history if interactive or for testing
+    {
+        let shell = SHELL.shell.lock().unwrap();
+        let mut history = shell.history.lock().unwrap();
+        history.push(line.to_string());
+        if history.len() > 1000 {
+            history.remove(0);
+        }
+    }
+
     let mut lexer = Lexer::new(line);
     let mut parser = Parser::new(&mut lexer);
 

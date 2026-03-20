@@ -6,8 +6,75 @@ pub fn expand_all(s: &str) -> String {
     let s = expand_tilde(&s);
     let s = expand_command_substitution(&s);
     let s = expand_variable(&s);
+    let s = expand_braces(&s);
 
     remove_quotes(&s)
+}
+
+pub fn expand_braces(s: &str) -> String {
+    let mut brace_start = None;
+    let mut brace_level = 0;
+    let chars: Vec<char> = s.chars().collect();
+
+    for i in 0..chars.len() {
+        match chars[i] {
+            '{' => {
+                if brace_level == 0 {
+                    brace_start = Some(i);
+                }
+                brace_level += 1;
+            }
+            '}' => {
+                if brace_level > 0 {
+                    brace_level -= 1;
+                    if brace_level == 0 {
+                        if let Some(start) = brace_start {
+                            let prefix = &s[..start];
+                            let suffix = &s[i + 1..];
+                            let inner = &s[start + 1..i];
+
+                            // Check for top-level commas in the inner part
+                            let mut parts = Vec::new();
+                            let mut current_part = String::new();
+                            let mut inner_brace_level = 0;
+                            for c in inner.chars() {
+                                if c == ',' && inner_brace_level == 0 {
+                                    parts.push(current_part);
+                                    current_part = String::new();
+                                } else {
+                                    if c == '{' {
+                                        inner_brace_level += 1;
+                                    } else if c == '}' {
+                                        inner_brace_level -= 1;
+                                    }
+                                    current_part.push(c);
+                                }
+                            }
+                            parts.push(current_part);
+
+                            if parts.len() > 1 {
+                                let mut result = Vec::new();
+                                for part in parts {
+                                    let expanded = format!("{}{}{}", prefix, part, suffix);
+                                    result.push(expand_braces(&expanded));
+                                }
+                                return result.join(" ");
+                            } else {
+                                // If it's just {a}, we should NOT expand it, but we MUST
+                                // check if there are OTHER braces in the suffix.
+                                // We can just reconstruct and continue searching after this brace.
+                                let reconstructed = format!("{}{}{}{}{}", prefix, '{', inner, '}', expand_braces(suffix));
+                                return reconstructed;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    s.to_string()
 }
 
 pub fn expand_arithmetic(s: &str) -> String {
@@ -380,15 +447,48 @@ pub fn expand_glob(s: &str) -> String {
     if !s.contains('*') && !s.contains('?') && !s.contains('[') {
         return s.to_string();
     }
+
+    // If it contains **, use globwalk for recursive globbing
+    if s.contains("**") {
+        let mut matches = Vec::new();
+        // globwalk expects patterns relative to a base directory or absolute
+        // We'll try to use current directory as base if it's a relative pattern
+        let base = if s.starts_with('/') { "/" } else { "." };
+        let pattern = if s.starts_with('/') { &s[1..] } else { s };
+
+        if let Ok(walker) = globwalk::GlobWalkerBuilder::from_patterns(base, &[pattern])
+            .follow_links(true)
+            .build()
+        {
+            for entry in walker.filter_map(|e| e.ok()) {
+                if let Some(path_str) = entry.path().to_str() {
+                    let p = if path_str.starts_with("./") {
+                        &path_str[2..]
+                    } else {
+                        path_str
+                    };
+                    matches.push(p.to_string());
+                }
+            }
+        }
+
+        if matches.is_empty() {
+            return s.to_string();
+        }
+        matches.sort();
+        return matches.join(" ");
+    }
+
     match glob::glob(s) {
         Ok(entries) => {
-            let matches: Vec<String> = entries
+            let mut matches: Vec<String> = entries
                 .filter_map(|e| e.ok())
                 .filter_map(|e| e.to_str().map(|s| s.to_string()))
                 .collect();
             if matches.is_empty() {
                 s.to_string()
             } else {
+                matches.sort();
                 matches.join(" ")
             }
         }
