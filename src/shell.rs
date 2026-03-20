@@ -24,9 +24,9 @@ impl ShellState {
     }
 }
 
-lazy_static::lazy_static! {
-    pub static ref SHELL: ShellState = ShellState::new();
-}
+use std::sync::LazyLock;
+
+pub static SHELL: LazyLock<ShellState> = LazyLock::new(ShellState::new);
 
 pub fn shell_init() {
     let mut shell = SHELL.shell.lock().unwrap();
