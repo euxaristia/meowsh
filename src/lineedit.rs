@@ -12,6 +12,44 @@ use std::borrow::Cow;
 pub struct MeowshHelper;
 
 impl MeowshHelper {
+    fn command_exists(&self, name: &str) -> bool {
+        let shell = crate::shell::SHELL.shell.lock().unwrap();
+
+        if shell.aliases.contains_key(name) || shell.functions.contains_key(name) {
+            return true;
+        }
+
+        let builtins = [
+            "exit", "cd", "source", "pwd", "echo", "true", "false", "test", "[", "jobs", "fg",
+            "bg", "export", "set", "unset", "alias", "unalias", "read", "shift", "local",
+            "type", "kill", "wait", "umask", "return", "eval", "trap", "ulimit", "readonly",
+            "history",
+        ];
+        if builtins.contains(&name) {
+            return true;
+        }
+
+        if name.contains('/') {
+            return std::path::Path::new(name).is_file();
+        }
+
+        let path = shell
+            .vars
+            .get("PATH")
+            .map(|v| v.value.as_str())
+            .unwrap_or("");
+        for dir in path.split(':') {
+            if dir.is_empty() {
+                continue;
+            }
+            if std::path::Path::new(dir).join(name).is_file() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn get_completions(&self, line: &str) -> Vec<rustyline::completion::Pair> {
         let mut completions = Vec::new();
         let shell = crate::shell::SHELL.shell.lock().unwrap();
@@ -96,6 +134,97 @@ impl Completer for MeowshHelper {
 }
 
 impl Highlighter for MeowshHelper {
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        if line.is_empty() {
+            return Cow::Borrowed(line);
+        }
+
+        let mut colored = String::with_capacity(line.len() * 2);
+        let mut i = 0;
+        let chars: Vec<char> = line.chars().collect();
+        let mut is_start_of_command = true;
+
+        while i < chars.len() {
+            match chars[i] {
+                ' ' | '\t' => {
+                    colored.push(chars[i]);
+                    i += 1;
+                }
+                '#' if is_start_of_command => {
+                    colored.push_str("\x1b[90m");
+                    colored.extend(&chars[i..]);
+                    colored.push_str("\x1b[0m");
+                    break;
+                }
+                ';' | '|' | '&' => {
+                    colored.push_str("\x1b[36m");
+                    colored.push(chars[i]);
+                    if i + 1 < chars.len() && chars[i + 1] == chars[i] && (chars[i] == '|' || chars[i] == '&') {
+                        colored.push(chars[i + 1]);
+                        i += 1;
+                    }
+                    colored.push_str("\x1b[0m");
+                    is_start_of_command = true;
+                    i += 1;
+                }
+                '\'' | '"' => {
+                    let quote = chars[i];
+                    colored.push_str("\x1b[33m");
+                    colored.push(quote);
+                    i += 1;
+                    while i < chars.len() && chars[i] != quote {
+                        if chars[i] == '\\' && i + 1 < chars.len() {
+                            colored.push('\\');
+                            colored.push(chars[i+1]);
+                            i += 2;
+                        } else {
+                            colored.push(chars[i]);
+                            i += 1;
+                        }
+                    }
+                    if i < chars.len() {
+                        colored.push(quote);
+                        i += 1;
+                    }
+                    colored.push_str("\x1b[0m");
+                    is_start_of_command = false;
+                }
+                '$' => {
+                    colored.push_str("\x1b[35m");
+                    colored.push('$');
+                    i += 1;
+                    while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                        colored.push(chars[i]);
+                        i += 1;
+                    }
+                    colored.push_str("\x1b[0m");
+                    is_start_of_command = false;
+                }
+                _ => {
+                    let start = i;
+                    while i < chars.len() && !chars[i].is_whitespace() && !";|&'\"$".contains(chars[i]) {
+                        i += 1;
+                    }
+                    let word: String = chars[start..i].iter().collect();
+                    if is_start_of_command {
+                        if self.command_exists(&word) {
+                            colored.push_str("\x1b[32m");
+                        } else {
+                            colored.push_str("\x1b[31m");
+                        }
+                        colored.push_str(&word);
+                        colored.push_str("\x1b[0m");
+                        is_start_of_command = false;
+                    } else {
+                        colored.push_str(&word);
+                    }
+                }
+            }
+        }
+
+        Cow::Owned(colored)
+    }
+
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
         &self,
         prompt: &'p str,
@@ -308,5 +437,49 @@ mod tests {
         let history = FileHistory::new();
         let ctx = rustyline::Context::new(&history);
         assert_eq!(helper.hint("grep", 4, &ctx), None);
+    }
+
+    #[test]
+    fn test_highlight_command() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+        
+        // Known builtin
+        let h = helper.highlight("echo hello", 0);
+        assert!(h.contains("\x1b[32mecho\x1b[0m"));
+        
+        // Unknown command
+        let h = helper.highlight("nonexistent_command", 0);
+        assert!(h.contains("\x1b[31mnonexistent_command\x1b[0m"));
+    }
+
+    #[test]
+    fn test_highlight_operators() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+        
+        let h = helper.highlight("ls | grep foo && echo bar", 0);
+        assert!(h.contains("\x1b[36m|\x1b[0m"));
+        assert!(h.contains("\x1b[36m&&\x1b[0m"));
+        // Second command 'grep' should be highlighted too
+        assert!(h.contains("\x1b[32mgrep\x1b[0m") || h.contains("\x1b[31mgrep\x1b[0m"));
+    }
+
+    #[test]
+    fn test_highlight_strings() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+        
+        let h = helper.highlight("echo \"hello world\"", 0);
+        assert!(h.contains("\x1b[33m\"hello world\"\x1b[0m"));
+    }
+
+    #[test]
+    fn test_highlight_comments() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+        
+        let h = helper.highlight("# this is a comment", 0);
+        assert!(h.contains("\x1b[90m# this is a comment\x1b[0m"));
     }
 }
