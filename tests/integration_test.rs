@@ -1,11 +1,12 @@
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 fn run_script(script: &str) -> (i32, String, String) {
     let child = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .arg("-i")
         .arg("-c")
         .arg(script)
         .stdout(std::process::Stdio::piped())
@@ -144,6 +145,7 @@ fn test_parameter_expansion_remove_prefix() {
 #[test]
 fn test_history_builtin() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .arg("-i")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

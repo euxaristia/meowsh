@@ -18,25 +18,44 @@ fn main() {
         signal(SIGTTOU, SIG_IGN);
     }
 
-    // Check if interactive
-    let interactive = unsafe { isatty(0) != 0 };
+    // Parse arguments
+    let args: Vec<String> = env::args().collect();
+    let mut interactive = unsafe { isatty(0) != 0 };
+    let mut script_to_run = None;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-i" => {
+                interactive = true;
+            }
+            "-c" => {
+                if i + 1 < args.len() {
+                    script_to_run = Some(args[i + 1].clone());
+                }
+                break;
+            }
+            _ => {
+                // Positional arguments or unknown flags
+                break;
+            }
+        }
+        i += 1;
+    }
+
     SHELL.shell.lock().unwrap().interactive = interactive;
 
     if interactive {
         SHELL.shell.lock().unwrap().opts |= OPT_INTERACTIVE;
     }
 
-    // Parse arguments
-    let args: Vec<String> = env::args().collect();
     if !args.is_empty() {
         SHELL.shell.lock().unwrap().argv0 = args[0].clone();
     }
 
     // Handle -c option
-    if args.len() > 1 && args[1] == "-c" {
-        if args.len() > 2 {
-            execute_line(&args[2]);
-        }
+    if let Some(script) = script_to_run {
+        execute_line(&script);
         return;
     }
 

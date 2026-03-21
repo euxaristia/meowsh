@@ -113,13 +113,30 @@ impl Highlighter for MeowshHelper {
 impl Hinter for MeowshHelper {
     type Hint = String;
 
-    fn hint(&self, line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
+    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
+        // Only show hint if cursor is at the end of the line
+        if pos < line.len() {
+            return None;
+        }
+
+        let trimmed_input = line.trim_start();
+        if trimmed_input.is_empty() {
+            return None;
+        }
+
         let shell = crate::shell::SHELL.shell.lock().unwrap();
         let history = shell.history.lock().unwrap();
 
+        let lower_input = trimmed_input.to_lowercase();
         for hist in history.iter().rev() {
-            if hist.starts_with(line) && hist.len() > line.len() {
-                return Some(hist[line.len()..].to_string());
+            let lower_hist = hist.to_lowercase();
+            if lower_hist.starts_with(&lower_input) && hist.chars().count() > trimmed_input.chars().count() {
+                // Return what's left of the history entry after the input
+                // We skip the number of characters in the input to get the hint suffix
+                let char_count = trimmed_input.chars().count();
+                let hint: String = hist.chars().skip(char_count).collect();
+                // Apply grey/dim styling (ANSI 90)
+                return Some(format!("\x1b[90m{}\x1b[0m", hint));
             }
         }
         None
