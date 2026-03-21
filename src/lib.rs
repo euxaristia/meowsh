@@ -15,3 +15,5 @@ pub use expand::*;
 pub use exec::*;
 pub use jobs::*;
 pub use lineedit::*;
+
+pub static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

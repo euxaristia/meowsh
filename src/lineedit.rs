@@ -220,3 +220,71 @@ pub fn run_noninteractive() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::SHELL;
+    use crate::TEST_LOCK;
+    use rustyline::hint::Hinter;
+
+    #[test]
+    fn test_hinter_no_input() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let helper = MeowshHelper;
+        let history = FileHistory::new();
+        let ctx = rustyline::Context::new(&history);
+        assert_eq!(helper.hint("", 0, &ctx), None);
+        assert_eq!(helper.hint("   ", 3, &ctx), None);
+    }
+
+    #[test]
+    fn test_hinter_mid_line() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let helper = MeowshHelper;
+        let history = FileHistory::new();
+        let ctx = rustyline::Context::new(&history);
+        assert_eq!(helper.hint("echo hello", 4, &ctx), None);
+    }
+
+    #[test]
+    fn test_hinter_match() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        {
+            let shell = SHELL.shell.lock().unwrap();
+            let mut history = shell.history.lock().unwrap();
+            history.clear();
+            history.push("ls -l".to_string());
+            history.push("echo hello".to_string());
+        }
+
+        let helper = MeowshHelper;
+        let history = FileHistory::new();
+        let ctx = rustyline::Context::new(&history);
+        
+        // Case insensitive match and prefix match
+        let hint = helper.hint("ec", 2, &ctx);
+        assert!(hint.is_some());
+        assert!(hint.unwrap().contains("ho hello"));
+
+        let hint = helper.hint("LS", 2, &ctx);
+        assert!(hint.is_some());
+        assert!(hint.unwrap().contains("-l"));
+    }
+
+    #[test]
+    fn test_hinter_no_match() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        {
+            let shell = SHELL.shell.lock().unwrap();
+            let mut history = shell.history.lock().unwrap();
+            history.clear();
+            history.push("ls -l".to_string());
+        }
+
+        let helper = MeowshHelper;
+        let history = FileHistory::new();
+        let ctx = rustyline::Context::new(&history);
+        assert_eq!(helper.hint("grep", 4, &ctx), None);
+    }
+}

@@ -993,3 +993,75 @@ fn builtin_history(_args: &[String]) -> i32 {
     }
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::SHELL;
+    use crate::TEST_LOCK;
+
+    #[test]
+    fn test_execute_line_history() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        {
+            let mut shell = SHELL.shell.lock().unwrap();
+            shell.interactive = true;
+            let mut history = shell.history.lock().unwrap();
+            history.clear();
+        }
+
+        execute_line("ls -l");
+        execute_line("echo hello");
+
+        {
+            let shell = SHELL.shell.lock().unwrap();
+            let history = shell.history.lock().unwrap();
+            assert_eq!(history.len(), 2);
+            assert_eq!(history[0], "ls -l");
+            assert_eq!(history[1], "echo hello");
+        }
+    }
+
+    #[test]
+    fn test_execute_line_history_non_interactive() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        {
+            let mut shell = SHELL.shell.lock().unwrap();
+            shell.interactive = false;
+            let mut history = shell.history.lock().unwrap();
+            history.clear();
+        }
+
+        execute_line("ls -l");
+
+        {
+            let shell = SHELL.shell.lock().unwrap();
+            let history = shell.history.lock().unwrap();
+            assert_eq!(history.len(), 0);
+        }
+    }
+
+    #[test]
+    fn test_execute_line_history_limit() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        {
+            let mut shell = SHELL.shell.lock().unwrap();
+            shell.interactive = true;
+            let mut history = shell.history.lock().unwrap();
+            history.clear();
+            for i in 0..1000 {
+                history.push(format!("cmd{}", i));
+            }
+        }
+
+        execute_line("new_cmd");
+
+        {
+            let shell = SHELL.shell.lock().unwrap();
+            let history = shell.history.lock().unwrap();
+            assert_eq!(history.len(), 1000);
+            assert_eq!(history[999], "new_cmd");
+            assert_eq!(history[0], "cmd1");
+        }
+    }
+}

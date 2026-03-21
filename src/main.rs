@@ -18,30 +18,10 @@ fn main() {
         signal(SIGTTOU, SIG_IGN);
     }
 
-    // Parse arguments
     let args: Vec<String> = env::args().collect();
-    let mut interactive = unsafe { isatty(0) != 0 };
-    let mut script_to_run = None;
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "-i" => {
-                interactive = true;
-            }
-            "-c" => {
-                if i + 1 < args.len() {
-                    script_to_run = Some(args[i + 1].clone());
-                }
-                break;
-            }
-            _ => {
-                // Positional arguments or unknown flags
-                break;
-            }
-        }
-        i += 1;
-    }
+    let (interactive_flag, script_to_run) = parse_args(&args);
+    
+    let interactive = interactive_flag.unwrap_or_else(|| unsafe { isatty(0) != 0 });
 
     SHELL.shell.lock().unwrap().interactive = interactive;
 
@@ -63,5 +43,73 @@ fn main() {
         run_interactive();
     } else {
         run_noninteractive();
+    }
+}
+
+fn parse_args(args: &[String]) -> (Option<bool>, Option<String>) {
+    let mut interactive = None;
+    let mut script_to_run = None;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-i" => {
+                interactive = Some(true);
+            }
+            "-c" => {
+                if i + 1 < args.len() {
+                    script_to_run = Some(args[i + 1].clone());
+                }
+                break;
+            }
+            _ => {
+                // Positional arguments or unknown flags
+                break;
+            }
+        }
+        i += 1;
+    }
+    (interactive, script_to_run)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use meowsh::TEST_LOCK;
+
+    #[test]
+    fn test_parse_args_interactive() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let args = vec!["meowsh".to_string(), "-i".to_string()];
+        let (interactive, script) = parse_args(&args);
+        assert_eq!(interactive, Some(true));
+        assert_eq!(script, None);
+    }
+
+    #[test]
+    fn test_parse_args_script() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let args = vec!["meowsh".to_string(), "-c".to_string(), "echo hello".to_string()];
+        let (interactive, script) = parse_args(&args);
+        assert_eq!(interactive, None);
+        assert_eq!(script, Some("echo hello".to_string()));
+    }
+
+    #[test]
+    fn test_parse_args_both() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let args = vec!["meowsh".to_string(), "-i".to_string(), "-c".to_string(), "ls".to_string()];
+        let (interactive, script) = parse_args(&args);
+        assert_eq!(interactive, Some(true));
+        assert_eq!(script, Some("ls".to_string()));
+    }
+
+    #[test]
+    fn test_parse_args_none() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let args = vec!["meowsh".to_string()];
+        let (interactive, script) = parse_args(&args);
+        assert_eq!(interactive, None);
+        assert_eq!(script, None);
     }
 }
