@@ -219,3 +219,85 @@ pub fn build_prompt() -> String {
     let short_pwd = shorten_path(pwd);
     format!("\x1b[32m{}\x1b[0m \x1b[34m{}\x1b[0m 𓃠  ", user, short_pwd)
 }
+
+pub fn find_command(name: &str) -> Option<String> {
+    if name.contains('/') {
+        let p = std::path::Path::new(name);
+        if p.is_file() && is_executable(p) {
+            return Some(name.to_string());
+        }
+        return None;
+    }
+
+    let path = var_get("PATH");
+    for dir in path.split(':') {
+        let dir = if dir.is_empty() { "." } else { dir };
+        let p = std::path::Path::new(dir).join(name);
+        if p.is_file() && is_executable(&p) {
+            return Some(p.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+fn is_executable(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = path.metadata() {
+            let mode = metadata.permissions().mode();
+            return metadata.is_file() && (mode & 0o111 != 0);
+        }
+    }
+    path.is_file()
+}
+
+pub fn command_exists(name: &str) -> bool {
+    let name = crate::strip_ansi(name);
+    let name = name.as_str();
+    {
+        let shell = SHELL.shell.lock().unwrap();
+        if shell.aliases.contains_key(name) || shell.functions.contains_key(name) {
+            return true;
+        }
+    }
+
+    let builtins = [
+        "exit", "cd", "source", ".", "pwd", "echo", "true", "false", "test", "[", "jobs", "fg",
+        "bg", "export", "set", "unset", "alias", "unalias", "read", "shift", "local",
+        "type", "kill", "wait", "umask", "return", "eval", "trap", "ulimit", "readonly",
+        "history",
+    ];
+    if builtins.contains(&name) {
+        return true;
+    }
+
+    find_command(name).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TEST_LOCK;
+
+    #[test]
+    fn test_diagnostic_commands() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        shell_init();
+        let path = var_get("PATH");
+        println!("PATH in meowsh: {}", path);
+        
+        let ls_exists = command_exists("ls");
+        println!("ls exists: {}", ls_exists);
+        assert!(ls_exists, "ls should exist in PATH");
+
+        // Try cargo if it exists in the outer environment
+        if let Ok(cargo_path) = std::process::Command::new("which").arg("cargo").output() {
+            if cargo_path.status.success() {
+                let cargo_exists = command_exists("cargo");
+                println!("cargo exists: {}", cargo_exists);
+                assert!(cargo_exists, "cargo should exist in PATH if it exists in environment");
+            }
+        }
+    }
+}

@@ -2,7 +2,7 @@ use crate::expand::expand_all;
 use crate::jobs::{builtin_bg, builtin_fg, builtin_jobs, job_wait_foreground};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::shell::{var_get, var_set, SHELL};
+use crate::shell::{var_get, var_set, SHELL, find_command};
 use crate::types::{ASTNode, Job, JobState, ProcState, Redir};
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -302,7 +302,7 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
     let exe_path = if name.contains('/') {
         name.clone()
     } else {
-        find_command(&name)
+        find_command(&name).unwrap_or_default()
     };
 
     if exe_path.is_empty() {
@@ -366,20 +366,6 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
             1
         }
     }
-}
-
-fn find_command(name: &str) -> String {
-    let path = var_get("PATH");
-    for dir in path.split(':') {
-        if dir.is_empty() {
-            continue;
-        }
-        let p = Path::new(dir).join(name);
-        if p.exists() {
-            return p.to_string_lossy().to_string();
-        }
-    }
-    String::new()
 }
 
 fn exec_pipeline(node: &ASTNode) -> i32 {
@@ -800,8 +786,7 @@ fn builtin_type(args: &[String]) -> i32 {
         return 0;
     }
 
-    let path = find_command(name);
-    if !path.is_empty() {
+    if let Some(path) = find_command(name) {
         println!("{} is {}", name, path);
         return 0;
     }
