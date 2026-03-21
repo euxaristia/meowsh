@@ -1002,11 +1002,11 @@ mod tests {
 
     #[test]
     fn test_execute_line_history() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         {
-            let mut shell = SHELL.shell.lock().unwrap();
+            let mut shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
             shell.interactive = true;
-            let mut history = shell.history.lock().unwrap();
+            let mut history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             history.clear();
         }
 
@@ -1014,8 +1014,8 @@ mod tests {
         execute_line("echo hello");
 
         {
-            let shell = SHELL.shell.lock().unwrap();
-            let history = shell.history.lock().unwrap();
+            let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+            let history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             assert_eq!(history.len(), 2);
             assert_eq!(history[0], "ls -l");
             assert_eq!(history[1], "echo hello");
@@ -1024,30 +1024,30 @@ mod tests {
 
     #[test]
     fn test_execute_line_history_non_interactive() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         {
-            let mut shell = SHELL.shell.lock().unwrap();
+            let mut shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
             shell.interactive = false;
-            let mut history = shell.history.lock().unwrap();
+            let mut history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             history.clear();
         }
 
         execute_line("ls -l");
 
         {
-            let shell = SHELL.shell.lock().unwrap();
-            let history = shell.history.lock().unwrap();
+            let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+            let history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             assert_eq!(history.len(), 0);
         }
     }
 
     #[test]
     fn test_execute_line_history_limit() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         {
-            let mut shell = SHELL.shell.lock().unwrap();
+            let mut shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
             shell.interactive = true;
-            let mut history = shell.history.lock().unwrap();
+            let mut history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             history.clear();
             for i in 0..1000 {
                 history.push(format!("cmd{}", i));
@@ -1057,8 +1057,8 @@ mod tests {
         execute_line("new_cmd");
 
         {
-            let shell = SHELL.shell.lock().unwrap();
-            let history = shell.history.lock().unwrap();
+            let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+            let history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             assert_eq!(history.len(), 1000);
             assert_eq!(history[999], "new_cmd");
             assert_eq!(history[0], "cmd1");

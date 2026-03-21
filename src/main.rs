@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_parse_args_interactive() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let args = vec!["meowsh".to_string(), "-i".to_string()];
         let (interactive, script) = parse_args(&args);
         assert_eq!(interactive, Some(true));
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn test_parse_args_script() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let args = vec!["meowsh".to_string(), "-c".to_string(), "echo hello".to_string()];
         let (interactive, script) = parse_args(&args);
         assert_eq!(interactive, None);
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_parse_args_both() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let args = vec!["meowsh".to_string(), "-i".to_string(), "-c".to_string(), "ls".to_string()];
         let (interactive, script) = parse_args(&args);
         assert_eq!(interactive, Some(true));
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_parse_args_none() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let args = vec!["meowsh".to_string()];
         let (interactive, script) = parse_args(&args);
         assert_eq!(interactive, None);

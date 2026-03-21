@@ -110,10 +110,26 @@ impl Highlighter for MeowshHelper {
     }
 }
 
-impl Hinter for MeowshHelper {
-    type Hint = String;
+#[derive(Hash, Debug, PartialEq, Eq)]
+pub struct MeowshHint {
+    display: String,
+    completion: String,
+}
 
-    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
+impl rustyline::hint::Hint for MeowshHint {
+    fn display(&self) -> &str {
+        &self.display
+    }
+
+    fn completion(&self) -> Option<&str> {
+        Some(&self.completion)
+    }
+}
+
+impl Hinter for MeowshHelper {
+    type Hint = MeowshHint;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<MeowshHint> {
         // Only show hint if cursor is at the end of the line
         if pos < line.len() {
             return None;
@@ -134,9 +150,12 @@ impl Hinter for MeowshHelper {
                 // Return what's left of the history entry after the input
                 // We skip the number of characters in the input to get the hint suffix
                 let char_count = trimmed_input.chars().count();
-                let hint: String = hist.chars().skip(char_count).collect();
-                // Apply grey/dim styling (ANSI 90)
-                return Some(format!("\x1b[90m{}\x1b[0m", hint));
+                let hint_text: String = hist.chars().skip(char_count).collect();
+                
+                return Some(MeowshHint {
+                    display: format!("\x1b[90m{}\x1b[0m", hint_text),
+                    completion: hint_text,
+                });
             }
         }
         None
@@ -230,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_hinter_no_input() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let helper = MeowshHelper;
         let history = FileHistory::new();
         let ctx = rustyline::Context::new(&history);
@@ -240,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_hinter_mid_line() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let helper = MeowshHelper;
         let history = FileHistory::new();
         let ctx = rustyline::Context::new(&history);
@@ -249,10 +268,10 @@ mod tests {
 
     #[test]
     fn test_hinter_match() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         {
-            let shell = SHELL.shell.lock().unwrap();
-            let mut history = shell.history.lock().unwrap();
+            let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+            let mut history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             history.clear();
             history.push("ls -l".to_string());
             history.push("echo hello".to_string());
@@ -265,19 +284,22 @@ mod tests {
         // Case insensitive match and prefix match
         let hint = helper.hint("ec", 2, &ctx);
         assert!(hint.is_some());
-        assert!(hint.unwrap().contains("ho hello"));
+        use rustyline::hint::Hint;
+        assert!(hint.as_ref().unwrap().display().contains("ho hello"));
+        assert_eq!(hint.as_ref().unwrap().completion(), Some("ho hello"));
 
         let hint = helper.hint("LS", 2, &ctx);
         assert!(hint.is_some());
-        assert!(hint.unwrap().contains("-l"));
+        assert!(hint.as_ref().unwrap().display().contains(" -l"));
+        assert_eq!(hint.as_ref().unwrap().completion(), Some(" -l"));
     }
 
     #[test]
     fn test_hinter_no_match() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         {
-            let shell = SHELL.shell.lock().unwrap();
-            let mut history = shell.history.lock().unwrap();
+            let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+            let mut history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             history.clear();
             history.push("ls -l".to_string());
         }
