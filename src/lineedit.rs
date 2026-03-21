@@ -50,6 +50,23 @@ impl MeowshHelper {
         false
     }
 
+    fn fuzzy_match(&self, query: &str, candidate: &str) -> bool {
+        if query.is_empty() {
+            return true;
+        }
+        let mut query_chars = query.chars().peekable();
+        for c in candidate.chars() {
+            if let Some(&q) = query_chars.peek() {
+                if c.to_lowercase().next() == q.to_lowercase().next() {
+                    query_chars.next();
+                }
+            } else {
+                return true;
+            }
+        }
+        query_chars.peek().is_none()
+    }
+
     fn get_completions(&self, line: &str) -> Vec<rustyline::completion::Pair> {
         let mut completions = Vec::new();
         let shell = crate::shell::SHELL.shell.lock().unwrap();
@@ -61,7 +78,7 @@ impl MeowshHelper {
             let current = parts.last().unwrap_or(&"");
 
             for name in shell.aliases.keys() {
-                if name.starts_with(current) {
+                if self.fuzzy_match(current, name) {
                     completions.push(rustyline::completion::Pair {
                         display: name.clone(),
                         replacement: name.clone(),
@@ -70,7 +87,7 @@ impl MeowshHelper {
             }
 
             for name in shell.functions.keys() {
-                if name.starts_with(current) {
+                if self.fuzzy_match(current, name) {
                     completions.push(rustyline::completion::Pair {
                         display: name.clone(),
                         replacement: name.clone(),
@@ -82,9 +99,10 @@ impl MeowshHelper {
                 "exit", "cd", "source", "pwd", "echo", "true", "false", "test", "[", "jobs", "fg",
                 "bg", "export", "set", "unset", "alias", "unalias", "read", "shift", "local",
                 "type", "kill", "wait", "umask", "return", "eval", "trap", "ulimit", "readonly",
+                "history",
             ];
             for b in builtins {
-                if b.starts_with(current) {
+                if self.fuzzy_match(current, b) {
                     completions.push(rustyline::completion::Pair {
                         display: b.to_string(),
                         replacement: b.to_string(),
@@ -104,7 +122,7 @@ impl MeowshHelper {
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         if let Ok(name) = entry.file_name().into_string() {
-                            if name.starts_with(current) {
+                            if self.fuzzy_match(current, &name) {
                                 completions.push(rustyline::completion::Pair {
                                     display: name.clone(),
                                     replacement: name,
@@ -481,5 +499,29 @@ mod tests {
         
         let h = helper.highlight("# this is a comment", 0);
         assert!(h.contains("\x1b[90m# this is a comment\x1b[0m"));
+    }
+
+    #[test]
+    fn test_fuzzy_match() {
+        let helper = MeowshHelper;
+        assert!(helper.fuzzy_match("msh", "meowsh"));
+        assert!(helper.fuzzy_match("echo", "echo"));
+        assert!(helper.fuzzy_match("eo", "echo"));
+        assert!(helper.fuzzy_match("E", "echo"));
+        assert!(!helper.fuzzy_match("abc", "echo"));
+        assert!(helper.fuzzy_match("", "anything"));
+    }
+
+    #[test]
+    fn test_fuzzy_completions() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+        
+        // Test builtins fuzzy matching
+        let comps = helper.get_completions("eo");
+        assert!(comps.iter().any(|c| c.display == "echo"));
+        
+        let comps = helper.get_completions("rd");
+        assert!(comps.iter().any(|c| c.display == "read"));
     }
 }
