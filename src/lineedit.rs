@@ -3,7 +3,7 @@ use crate::strip_ansi;
 use rustyline::completion::Completer;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
-use rustyline::highlight::Highlighter;
+use rustyline::highlight::{CmdKind, Highlighter};
 use rustyline::hint::Hinter;
 use rustyline::history::FileHistory;
 use rustyline::validate::Validator;
@@ -363,6 +363,12 @@ impl Highlighter for MeowshHelper {
         Cow::Owned(format!("\x1b[90m{}\x1b[0m", hint))
     }
 
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        // Always re-render the full line so that command validity coloring
+        // updates for the entire word as the user types each character.
+        true
+    }
+
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
         &self,
         prompt: &'p str,
@@ -652,6 +658,17 @@ mod tests {
         
         let comps = helper.get_completions("rd");
         assert!(comps.iter().any(|c| c.display == "read"));
+    }
+
+    #[test]
+    fn test_highlight_char_always_true() {
+        let helper = MeowshHelper;
+        // highlight_char must return true for all inputs so rustyline
+        // re-renders the full line after every keystroke, preventing
+        // stale red coloring on partial command words.
+        assert!(helper.highlight_char("cargo", 0, CmdKind::MoveCursor));
+        assert!(helper.highlight_char("cargo", 3, CmdKind::Other));
+        assert!(helper.highlight_char("", 0, CmdKind::ForcedRefresh));
     }
 
     #[test]
