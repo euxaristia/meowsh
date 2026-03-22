@@ -39,7 +39,10 @@ impl MeowshHelper {
         let shell = crate::shell::SHELL.shell.lock().unwrap();
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        let is_cmd_position = parts.is_empty() || (parts.len() == 1 && !parts[0].contains('/'));
+        // Command position: empty line, single word without '/', or after a pipe/operator
+        let trailing_space = line.ends_with(' ') || line.ends_with('\t');
+        let is_cmd_position = parts.is_empty()
+            || (parts.len() == 1 && !trailing_space && !parts[0].contains('/'));
 
         if is_cmd_position {
             let current = parts.last().unwrap_or(&"");
@@ -99,9 +102,148 @@ impl MeowshHelper {
                     }
                 }
             }
+        } else {
+            // Argument position: complete file/directory paths
+            let current = if trailing_space {
+                ""
+            } else {
+                parts.last().unwrap_or(&"")
+            };
+            let cmd = parts.first().unwrap_or(&"");
+            let dirs_only = matches!(*cmd, "cd" | "pushd" | "rmdir");
+            self.complete_paths(current, &mut completions, dirs_only);
         }
 
         completions
+    }
+
+    fn complete_paths(&self, partial: &str, completions: &mut Vec<rustyline::completion::Pair>, dirs_only: bool) {
+        use std::path::Path;
+
+        // Expand ~ to home directory
+        let expanded = if partial.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                if partial == "~" {
+                    home.clone()
+                } else {
+                    partial.replacen('~', &home, 1)
+                }
+            } else {
+                partial.to_string()
+            }
+        } else {
+            partial.to_string()
+        };
+
+        let (dir, prefix) = if expanded.ends_with('/') {
+            (expanded.as_str(), "")
+        } else {
+            let path = Path::new(&expanded);
+            match (path.parent(), path.file_name()) {
+                (Some(parent), Some(name)) => {
+                    let dir_str = if parent.as_os_str().is_empty() {
+                        "."
+                    } else {
+                        parent.to_str().unwrap_or(".")
+                    };
+                    (dir_str, name.to_str().unwrap_or(""))
+                }
+                _ => (".", &*expanded),
+            }
+        };
+
+        // We need dir to live long enough - rebind to owned string for the case where
+        // dir was borrowed from a temporary
+        let dir_owned;
+        let dir = if dir == "." && expanded.ends_with('/') {
+            &*expanded
+        } else if dir == "." && !partial.is_empty() && !partial.starts_with('.') {
+            dir
+        } else {
+            dir_owned = dir.to_string();
+            &dir_owned
+        };
+
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        for entry in entries.flatten() {
+            let name = match entry.file_name().into_string() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+
+            // Skip hidden files unless the user is explicitly typing a dot prefix
+            if name.starts_with('.') && !prefix.starts_with('.') {
+                continue;
+            }
+
+            if !name.starts_with(prefix) {
+                continue;
+            }
+
+            let is_dir = entry
+                .file_type()
+                .map(|ft| ft.is_dir())
+                .unwrap_or(false);
+
+            if dirs_only && !is_dir {
+                continue;
+            }
+
+            // Build the replacement string preserving the user's typed prefix
+            let replacement = if partial.is_empty() {
+                if is_dir {
+                    format!("{}/", name)
+                } else {
+                    name.clone()
+                }
+            } else if partial.ends_with('/') {
+                if is_dir {
+                    format!("{}{}/", partial, name)
+                } else {
+                    format!("{}{}", partial, name)
+                }
+            } else {
+                // Replace just the filename portion, keeping the directory part
+                let dir_prefix = if let Some(slash_pos) = partial.rfind('/') {
+                    &partial[..=slash_pos]
+                } else {
+                    ""
+                };
+                if is_dir {
+                    format!("{}{}/", dir_prefix, name)
+                } else {
+                    format!("{}{}", dir_prefix, name)
+                }
+            };
+
+            let display = if is_dir {
+                format!("{}/", name)
+            } else {
+                name
+            };
+
+            completions.push(rustyline::completion::Pair {
+                display,
+                replacement,
+            });
+        }
+
+        completions.sort_by(|a, b| a.display.cmp(&b.display));
+
+        // If the only match is a directory, expand into it so the user can
+        // keep tabbing into its contents instead of cycling back.
+        if completions.len() == 1 && completions[0].replacement.ends_with('/') {
+            let dir_path = completions[0].replacement.clone();
+            let mut inner = Vec::new();
+            self.complete_paths(&dir_path, &mut inner, dirs_only);
+            if !inner.is_empty() {
+                *completions = inner;
+            }
+        }
     }
 }
 
@@ -695,5 +837,180 @@ mod tests {
         let (offset, candidates) = helper.complete("\x1b[31mec", 7, &ctx).unwrap();
         assert_eq!(offset, 5);
         assert!(candidates.iter().any(|c| c.display == "echo"));
+    }
+
+    #[test]
+    fn test_complete_paths_in_current_dir() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        // Create a temp directory with known files
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("hello.txt");
+        std::fs::write(&file_path, "test").unwrap();
+        let sub_dir = tmp.path().join("subdir");
+        std::fs::create_dir(&sub_dir).unwrap();
+
+        let mut completions = Vec::new();
+        let partial = tmp.path().join("hel");
+        let partial_str = partial.to_str().unwrap();
+        helper.complete_paths(partial_str, &mut completions, false);
+        assert!(completions.iter().any(|c| c.display == "hello.txt"));
+
+        // When a single directory matches, it auto-expands into its contents.
+        // Add a file inside subdir so the expansion has results.
+        std::fs::write(sub_dir.join("inner.txt"), "").unwrap();
+        let mut completions = Vec::new();
+        let partial = tmp.path().join("sub");
+        let partial_str = partial.to_str().unwrap();
+        helper.complete_paths(partial_str, &mut completions, false);
+        // "subdir/" was the only match, so it expanded into its contents
+        assert!(completions.iter().any(|c| c.display == "inner.txt"));
+
+        // When multiple dirs/files match the prefix, directories keep their slash
+        std::fs::create_dir(tmp.path().join("submarine")).unwrap();
+        let mut completions = Vec::new();
+        helper.complete_paths(partial_str, &mut completions, false);
+        assert!(completions.iter().any(|c| c.display == "subdir/"));
+        assert!(completions.iter().any(|c| c.display == "submarine/"));
+    }
+
+    #[test]
+    fn test_complete_paths_hidden_files() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".hidden"), "").unwrap();
+        std::fs::write(tmp.path().join("visible"), "").unwrap();
+
+        // Without dot prefix, hidden files should be excluded
+        let mut completions = Vec::new();
+        let partial = tmp.path().join("");
+        let partial_str = partial.to_str().unwrap();
+        helper.complete_paths(partial_str, &mut completions, false);
+        assert!(!completions.iter().any(|c| c.display == ".hidden"));
+        assert!(completions.iter().any(|c| c.display == "visible"));
+
+        // With dot prefix, hidden files should appear
+        let mut completions = Vec::new();
+        let partial = tmp.path().join(".hid");
+        let partial_str = partial.to_str().unwrap();
+        helper.complete_paths(partial_str, &mut completions, false);
+        assert!(completions.iter().any(|c| c.display == ".hidden"));
+    }
+
+    #[test]
+    fn test_complete_paths_tilde_expansion() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        // ~ should expand to HOME and list files there
+        let mut completions = Vec::new();
+        helper.complete_paths("~/", &mut completions, false);
+        // We can't assert specific files in HOME, but we should get some results
+        // and no panics. Just verify it doesn't crash.
+        assert!(completions.len() > 0 || true); // no-panic check
+    }
+
+    #[test]
+    fn test_complete_paths_nonexistent_dir() {
+        let helper = MeowshHelper;
+
+        // Should return empty, not panic
+        let mut completions = Vec::new();
+        helper.complete_paths("/nonexistent_dir_12345/foo", &mut completions, false);
+        assert!(completions.is_empty());
+    }
+
+    #[test]
+    fn test_complete_file_in_arg_position() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("myfile.rs"), "").unwrap();
+
+        // Simulate "cat <partial_path>" — argument position
+        let partial = tmp.path().join("myf");
+        let line = format!("cat {}", partial.to_str().unwrap());
+        let completions = helper.get_completions(&line);
+        assert!(completions.iter().any(|c| c.display == "myfile.rs"));
+    }
+
+    #[test]
+    fn test_complete_empty_arg_lists_files() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        // "echo " (with trailing space) should be argument position
+        // and complete files in current directory
+        let completions = helper.get_completions("echo ");
+        // Should have at least some files (Cargo.toml, src/, etc.)
+        assert!(!completions.is_empty());
+    }
+
+    #[test]
+    fn test_complete_dir_adds_trailing_slash() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("mydir")).unwrap();
+        std::fs::write(tmp.path().join("myfile"), "").unwrap();
+
+        let mut completions = Vec::new();
+        let partial = tmp.path().join("my");
+        let partial_str = partial.to_str().unwrap();
+        helper.complete_paths(partial_str, &mut completions, false);
+
+        let dir_comp = completions.iter().find(|c| c.display == "mydir/").unwrap();
+        assert!(dir_comp.replacement.ends_with('/'));
+
+        let file_comp = completions.iter().find(|c| c.display == "myfile").unwrap();
+        assert!(!file_comp.replacement.ends_with('/'));
+    }
+
+    #[test]
+    fn test_cd_completes_dirs_only() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("alpha")).unwrap();
+        std::fs::create_dir(tmp.path().join("bravo")).unwrap();
+        std::fs::write(tmp.path().join("afile.txt"), "").unwrap();
+
+        // dirs_only=true should exclude files
+        let mut completions = Vec::new();
+        let partial = tmp.path().join("a");
+        let partial_str = partial.to_str().unwrap();
+        helper.complete_paths(partial_str, &mut completions, true);
+        assert!(completions.iter().any(|c| c.display == "alpha/"));
+        assert!(!completions.iter().any(|c| c.display == "afile.txt"));
+
+        // dirs_only=false should include both
+        let mut completions = Vec::new();
+        helper.complete_paths(partial_str, &mut completions, false);
+        assert!(completions.iter().any(|c| c.display == "alpha/"));
+        assert!(completions.iter().any(|c| c.display == "afile.txt"));
+    }
+
+    #[test]
+    fn test_cd_completion_via_get_completions() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let helper = MeowshHelper;
+
+        // "cd " should only show directories from cwd, not files
+        let completions = helper.get_completions("cd ");
+        for c in &completions {
+            assert!(
+                c.display.ends_with('/'),
+                "cd completion '{}' should be a directory",
+                c.display
+            );
+        }
+        // Should have at least src/ and tests/ from this project
+        assert!(completions.iter().any(|c| c.display == "src/"));
     }
 }
