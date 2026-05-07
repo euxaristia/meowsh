@@ -2,6 +2,7 @@ use crate::types::{
     Shell, Var, OPT_ALLEXPORT, OPT_ERREXIT, OPT_HASHALL, OPT_INTERACTIVE, OPT_MONITOR, OPT_NOEXEC,
     OPT_NOGLOB, OPT_NOUNSET, OPT_VERBOSE, OPT_XTRACE, VAR_EXPORT,
 };
+use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -186,6 +187,49 @@ pub fn var_set(name: &str, value: &str, _export: bool) {
         },
     );
     env::set_var(name, value);
+}
+
+pub fn push_scope() {
+    let mut shell = SHELL.shell.lock().unwrap();
+    shell.local_scopes.push(HashMap::new());
+}
+
+pub fn pop_scope() {
+    let mut shell = SHELL.shell.lock().unwrap();
+    if let Some(scope) = shell.local_scopes.pop() {
+        for (name, prev) in scope {
+            match prev {
+                Some(var) => {
+                    env::set_var(&name, &var.value);
+                    shell.vars.insert(name, var);
+                }
+                None => {
+                    shell.vars.remove(&name);
+                    env::remove_var(&name);
+                }
+            }
+        }
+    }
+}
+
+pub fn in_function_scope() -> bool {
+    !SHELL.shell.lock().unwrap().local_scopes.is_empty()
+}
+
+// Snapshot the current value of `name` into the innermost scope so it will
+// be restored on scope exit. Returns true if a scope existed (i.e. we are
+// inside a function), false otherwise. The first call for a given name
+// wins; subsequent calls in the same scope are no-ops to preserve the
+// original prior value.
+pub fn declare_local(name: &str) -> bool {
+    let mut shell = SHELL.shell.lock().unwrap();
+    let prev = shell.vars.get(name).cloned();
+    if let Some(scope) = shell.local_scopes.last_mut() {
+        scope.entry(name.to_string()).or_insert(prev);
+        true
+    } else {
+        false
+    }
 }
 
 pub fn is_assignment(s: &str) -> bool {

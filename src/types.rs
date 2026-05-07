@@ -58,7 +58,7 @@ pub struct Process {
 
 #[derive(Clone)]
 pub struct FuncDef {
-    pub body: String,
+    pub body: ASTNode,
 }
 
 pub struct Shell {
@@ -82,6 +82,10 @@ pub struct Shell {
     pub trap: HashMap<String, String>,
     pub functions: HashMap<String, FuncDef>,
     pub lineno: i32,
+    // Stack of local-variable scopes. Each entry maps a variable name to
+    // its prior global value (None = the variable was unset before being
+    // declared local). Pushed on function entry, popped on return.
+    pub local_scopes: Vec<HashMap<String, Option<Var>>>,
 }
 
 impl Shell {
@@ -107,6 +111,7 @@ impl Shell {
             trap: HashMap::new(),
             functions: HashMap::new(),
             lineno: 0,
+            local_scopes: Vec::new(),
         }
     }
 }

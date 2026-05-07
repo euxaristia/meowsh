@@ -2,7 +2,9 @@ use crate::expand::expand_all;
 use crate::jobs::{builtin_bg, builtin_fg, builtin_jobs, job_wait_foreground};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::shell::{var_get, var_set, SHELL, find_command};
+use crate::shell::{
+    declare_local, find_command, in_function_scope, pop_scope, push_scope, var_get, var_set, SHELL,
+};
 use crate::types::{ASTNode, Job, JobState, ProcState, Redir};
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -55,7 +57,16 @@ pub fn exec_node(node: &ASTNode) -> i32 {
     // For nodes that use left/right (and_or, etc.), don't apply the empty check
     let uses_left_right = matches!(
         node.node_type.as_str(),
-        "and_or" | "if" | "while" | "until" | "for" | "function" | "case"
+        "and_or"
+            | "if"
+            | "while"
+            | "until"
+            | "for"
+            | "function"
+            | "case"
+            | "brace_group"
+            | "subshell"
+            | "list"
     );
 
     if !uses_left_right
@@ -121,16 +132,21 @@ fn exec_simple(node: &ASTNode) -> i32 {
     }
 
     {
-        let functions = SHELL.shell.lock().unwrap().functions.clone();
-        if let Some(func) = functions.get(&name) {
+        let func_body = SHELL
+            .shell
+            .lock()
+            .unwrap()
+            .functions
+            .get(&name)
+            .map(|f| f.body.clone());
+        if let Some(body) = func_body {
             let old_params = SHELL.shell.lock().unwrap().pos_params.clone();
             SHELL.shell.lock().unwrap().pos_params = expanded_args[1..].to_vec();
 
-            let mut lexer = Lexer::new(&func.body);
-            let mut parser = Parser::new(&mut lexer);
-            if let Some(func_node) = parser.parse() {
-                exec_node(&func_node);
-            }
+            push_scope();
+            let _scope_guard = ScopeGuard;
+
+            exec_node(&body);
 
             SHELL.shell.lock().unwrap().pos_params = old_params;
             return SHELL.shell.lock().unwrap().last_status;
@@ -253,6 +269,14 @@ struct SavedFds {
     stdin: OwnedFd,
     stdout: OwnedFd,
     stderr: OwnedFd,
+}
+
+struct ScopeGuard;
+
+impl Drop for ScopeGuard {
+    fn drop(&mut self) {
+        pop_scope();
+    }
 }
 
 fn exec_command(args: &[String], foreground: bool) -> i32 {
@@ -531,7 +555,7 @@ fn exec_for(node: &ASTNode) -> i32 {
 fn exec_function(node: &ASTNode) -> i32 {
     if let Some(ref body) = node.func_body {
         let func = crate::types::FuncDef {
-            body: body.args.join(" "),
+            body: (**body).clone(),
         };
         SHELL
             .shell
@@ -752,13 +776,40 @@ fn builtin_shift(_args: &[String]) -> i32 {
 }
 
 fn builtin_local(args: &[String]) -> i32 {
+    if !in_function_scope() {
+        eprintln!("meowsh: local: can only be used in a function");
+        return 1;
+    }
     for arg in args {
-        if let Some(idx) = arg.find('=') {
-            let (name, value) = arg.split_at(idx);
-            var_set(name, &value[1..], false);
+        let (name, value) = match arg.find('=') {
+            Some(idx) => {
+                let (n, v) = arg.split_at(idx);
+                (n.to_string(), Some(expand_all(&v[1..])))
+            }
+            None => (arg.clone(), None),
+        };
+        if name.is_empty() || !is_valid_name(&name) {
+            eprintln!("meowsh: local: `{}': not a valid identifier", arg);
+            return 1;
+        }
+        declare_local(&name);
+        match value {
+            Some(v) => var_set(&name, &v, false),
+            // Bare `local foo` masks any existing global with an empty
+            // value for the duration of the function.
+            None => var_set(&name, "", false),
         }
     }
     0
+}
+
+fn is_valid_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn builtin_type(args: &[String]) -> i32 {
@@ -1024,6 +1075,106 @@ mod tests {
             let history = shell.history.lock().unwrap_or_else(|e| e.into_inner());
             assert_eq!(history.len(), 0);
         }
+    }
+
+    fn reset_shell() {
+        let mut shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        shell.vars.clear();
+        shell.functions.clear();
+        shell.local_scopes.clear();
+        shell.aliases.clear();
+        shell.pos_params.clear();
+        shell.last_status = 0;
+    }
+
+    #[test]
+    fn test_local_outside_function_errors() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("local x=1");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(shell.last_status, 1);
+        assert!(shell.vars.get("x").is_none());
+    }
+
+    #[test]
+    fn test_local_does_not_leak_after_return() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("function f { local x=inner; }");
+        execute_line("f");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(shell.vars.get("x").is_none(),
+            "x should not exist after function returns; got {:?}",
+            shell.vars.get("x").map(|v| &v.value));
+    }
+
+    #[test]
+    fn test_local_restores_prior_global() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("x=outer");
+        execute_line("function f { local x=inner; }");
+        execute_line("f");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(shell.vars.get("x").map(|v| v.value.as_str()), Some("outer"));
+    }
+
+    #[test]
+    fn test_bare_local_masks_with_empty_then_restores() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("x=outer");
+        // Function body that asserts x is empty inside, then mutates it.
+        execute_line("function f { local x; x=inside; }");
+        execute_line("f");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(shell.vars.get("x").map(|v| v.value.as_str()), Some("outer"));
+    }
+
+    #[test]
+    fn test_local_repeated_in_same_scope_keeps_original_snapshot() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("x=outer");
+        execute_line("function f { local x=first; local x=second; }");
+        execute_line("f");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(shell.vars.get("x").map(|v| v.value.as_str()), Some("outer"));
+    }
+
+    #[test]
+    fn test_nested_functions_have_independent_scopes() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("x=outer");
+        execute_line("function inner { local x=inner_val; }");
+        execute_line("function outer { local x=outer_val; inner; }");
+        execute_line("outer");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        // After outer returns, x should be restored to its pre-call value.
+        assert_eq!(shell.vars.get("x").map(|v| v.value.as_str()), Some("outer"));
+    }
+
+    #[test]
+    fn test_local_creates_var_that_did_not_exist() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("function f { local newvar=hi; }");
+        execute_line("f");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(shell.vars.get("newvar").is_none(),
+            "newvar should be unset after function returns");
+    }
+
+    #[test]
+    fn test_assignment_without_local_is_global() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_shell();
+        execute_line("function f { y=set_inside; }");
+        execute_line("f");
+        let shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(shell.vars.get("y").map(|v| v.value.as_str()), Some("set_inside"));
     }
 
     #[test]
