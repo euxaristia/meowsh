@@ -73,6 +73,9 @@ pub fn exec_node(node: &ASTNode) -> i32 {
     if !uses_left_right
         && node.args.is_empty()
         && node.assigns.is_empty()
+        && node.scalar_appends.is_empty()
+        && node.array_assigns.is_empty()
+        && node.array_appends.is_empty()
         && node.pipes.is_empty()
         && node.loop_var.is_empty()
     {
@@ -102,12 +105,30 @@ pub fn exec_node(node: &ASTNode) -> i32 {
 }
 
 fn exec_simple(node: &ASTNode) -> i32 {
-    if node.args.is_empty() && node.assigns.is_empty() {
+    if node.args.is_empty()
+        && node.assigns.is_empty()
+        && node.scalar_appends.is_empty()
+        && node.array_assigns.is_empty()
+        && node.array_appends.is_empty()
+    {
         return 0;
     }
 
     for (name, value) in &node.assigns {
         var_set(name, &expand_all(value), false);
+    }
+    for (name, value) in &node.scalar_appends {
+        let prev = var_get(name);
+        let appended = format!("{}{}", prev, expand_all(value));
+        var_set(name, &appended, false);
+    }
+    for (name, items) in &node.array_assigns {
+        let expanded: Vec<String> = items.iter().map(|s| expand_all(s)).collect();
+        crate::shell::array_set(name, expanded);
+    }
+    for (name, items) in &node.array_appends {
+        let expanded: Vec<String> = items.iter().map(|s| expand_all(s)).collect();
+        crate::shell::array_append(name, expanded);
     }
 
     let mut expanded_args: Vec<String> = node.args.iter().map(|arg| expand_all(arg)).collect();
@@ -305,6 +326,12 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
         "setopt" => builtin_setopt(&args[1..]),
         "unsetopt" => builtin_unsetopt(&args[1..]),
         "unset" => builtin_unset(&args[1..]),
+        "zstyle" => 0,
+        "add-zsh-hook" => 0,
+        "autoload" => builtin_autoload(&args[1..]),
+        "compinit" | "compdef" | "compaudit" => 0,
+        "bindkey" => 0,
+        "zmodload" => 0,
         "alias" => builtin_alias(&args[1..]),
         "unalias" => builtin_unalias(&args[1..]),
         "read" => builtin_read(&args[1..]),
@@ -547,19 +574,58 @@ fn exec_while(node: &ASTNode) -> i32 {
 }
 
 fn exec_for(node: &ASTNode) -> i32 {
-    let words = if node.loop_words.is_empty() {
+    let words: Vec<String> = if node.loop_words.is_empty() {
         SHELL.shell.lock().unwrap().pos_params.clone()
     } else {
-        node.loop_words.clone()
+        node.loop_words
+            .iter()
+            .flat_map(|w| expand_loop_word(w))
+            .collect()
     };
 
     for word in words {
-        var_set(&node.loop_var, &expand_all(&word), false);
+        var_set(&node.loop_var, &word, false);
         if let Some(ref body) = node.body {
             exec_node(body);
         }
     }
     0
+}
+
+// Expands a single `for ... in <word>` token into the list of values it
+// represents. Recognises `"${arr[@]}"`, `${arr[@]}`, `$arr` etc. — anything
+// that names an indexed array becomes one element per array slot. All other
+// tokens go through normal expansion as a single value.
+fn expand_loop_word(w: &str) -> Vec<String> {
+    let stripped = if (w.starts_with('"') && w.ends_with('"') && w.len() >= 2)
+        || (w.starts_with('\'') && w.ends_with('\'') && w.len() >= 2)
+    {
+        &w[1..w.len() - 1]
+    } else {
+        w
+    };
+    // ${name[@]} / ${name[*]}
+    if let Some(rest) = stripped.strip_prefix("${") {
+        if let Some(inner) = rest.strip_suffix('}') {
+            if let Some(open) = inner.find('[') {
+                if inner.ends_with("[@]") || inner.ends_with("[*]") {
+                    let name = &inner[..open];
+                    if let Some(arr) = crate::shell::array_get(name) {
+                        return arr;
+                    }
+                }
+            }
+        }
+    }
+    // $name (bare scalar reference; if name is an array, expand to elements).
+    if let Some(name) = stripped.strip_prefix('$') {
+        if !name.contains(['{', '[', '(', '$']) {
+            if let Some(arr) = crate::shell::array_get(name) {
+                return arr;
+            }
+        }
+    }
+    vec![expand_all(w)]
 }
 
 fn exec_function(node: &ASTNode) -> i32 {
@@ -839,6 +905,50 @@ fn builtin_set(args: &[String]) -> i32 {
     0
 }
 
+// Best-effort autoload: skips flag args (-U, -X, -z, -k, etc.), then for
+// each function name tries to find a file by that name in $fpath and
+// source it. If $fpath is unset or the file isn't found, the function is
+// silently registered as known so subsequent calls don't error out — this
+// matches the Phase 2A scope of "don't crash typical .zshrc".
+fn builtin_autoload(args: &[String]) -> i32 {
+    let fpath = var_get("fpath");
+    let fpath_dirs: Vec<&str> = if fpath.is_empty() {
+        Vec::new()
+    } else {
+        fpath.split_whitespace().collect()
+    };
+    for arg in args {
+        if arg.starts_with('-') || arg.starts_with('+') {
+            continue;
+        }
+        let mut found = false;
+        for dir in &fpath_dirs {
+            let path = format!("{}/{}", dir, arg);
+            if Path::new(&path).is_file() {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    let mut lexer = Lexer::new(&content);
+                    let mut parser = Parser::new(&mut lexer);
+                    while let Some(node) = parser.parse() {
+                        exec_node(&node);
+                    }
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            // Register as a no-op so calls don't fail with "command not found".
+            let mut body = ASTNode::new("brace_group");
+            body.body = Some(Box::new(ASTNode::new("empty")));
+            SHELL.shell.lock().unwrap().functions.insert(
+                arg.clone(),
+                crate::types::FuncDef { body },
+            );
+        }
+    }
+    0
+}
+
 fn builtin_setopt(args: &[String]) -> i32 {
     if args.is_empty() {
         let shell = SHELL.shell.lock().unwrap();
@@ -915,10 +1025,12 @@ fn toggle_named_opt(name: &str, value: bool) {
 
 fn builtin_unset(args: &[String]) -> i32 {
     for arg in args {
-        SHELL.shell.lock().unwrap().vars.remove(arg);
+        let mut shell = SHELL.shell.lock().unwrap();
+        shell.vars.remove(arg);
+        shell.arrays.remove(arg);
     }
-    if !args.is_empty() {
-        env::remove_var(&args[0]);
+    for arg in args {
+        env::remove_var(arg);
     }
     0
 }
@@ -1283,6 +1395,7 @@ mod tests {
     fn reset_shell() {
         let mut shell = SHELL.shell.lock().unwrap_or_else(|e| e.into_inner());
         shell.vars.clear();
+        shell.arrays.clear();
         shell.functions.clear();
         shell.local_scopes.clear();
         shell.aliases.clear();

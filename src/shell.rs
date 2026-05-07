@@ -174,6 +174,9 @@ pub fn var_get(name: &str) -> String {
         }
     }
 
+    if let Some(arr) = shell.arrays.get(name) {
+        return arr.join(" ");
+    }
     if let Some(v) = shell.vars.get(name) {
         return v.value.clone();
     }
@@ -192,6 +195,9 @@ pub fn var_get_if_exists(name: &str) -> Option<i64> {
 
 pub fn var_set(name: &str, value: &str, _export: bool) {
     let mut shell = SHELL.shell.lock().unwrap();
+    // Setting a scalar with the same name as an existing array clears the
+    // array — they share a namespace.
+    shell.arrays.remove(name);
     shell.vars.insert(
         name.to_string(),
         Var {
@@ -200,6 +206,31 @@ pub fn var_set(name: &str, value: &str, _export: bool) {
         },
     );
     env::set_var(name, value);
+}
+
+pub fn array_set(name: &str, items: Vec<String>) {
+    let mut shell = SHELL.shell.lock().unwrap();
+    shell.vars.remove(name);
+    let joined = items.join(" ");
+    env::set_var(name, &joined);
+    shell.arrays.insert(name.to_string(), items);
+}
+
+pub fn array_append(name: &str, items: Vec<String>) {
+    let mut shell = SHELL.shell.lock().unwrap();
+    let existing = shell.arrays.entry(name.to_string()).or_default();
+    existing.extend(items);
+    let joined = existing.join(" ");
+    shell.vars.remove(name);
+    env::set_var(name, &joined);
+}
+
+pub fn array_get(name: &str) -> Option<Vec<String>> {
+    SHELL.shell.lock().unwrap().arrays.get(name).cloned()
+}
+
+pub fn is_array(name: &str) -> bool {
+    SHELL.shell.lock().unwrap().arrays.contains_key(name)
 }
 
 pub fn push_scope() {
@@ -249,11 +280,16 @@ pub fn is_assignment(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    for (i, c) in s.chars().enumerate() {
-        if c == '=' {
+    let bytes = s.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'=' {
             return i > 0;
         }
-        if !c.is_alphabetic() && !c.is_ascii_digit() && c != '_' {
+        if b == b'+' && bytes.get(i + 1) == Some(&b'=') {
+            return i > 0;
+        }
+        let c = b as char;
+        if !c.is_alphabetic() && !c.is_ascii_digit() && b != b'_' {
             return false;
         }
     }
@@ -544,7 +580,8 @@ pub fn command_exists(name: &str) -> bool {
         "exit", "cd", "source", ".", "pwd", "echo", "true", "false", "test", "[", "jobs", "fg",
         "bg", "export", "set", "setopt", "unsetopt", "unset", "alias", "unalias", "read", "shift",
         "local", "type", "kill", "wait", "umask", "return", "eval", "trap", "ulimit", "readonly",
-        "history",
+        "history", "zstyle", "add-zsh-hook", "autoload", "compinit", "compdef", "compaudit",
+        "bindkey", "zmodload",
     ];
     if builtins.contains(&name) {
         return true;
