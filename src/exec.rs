@@ -67,6 +67,7 @@ pub fn exec_node(node: &ASTNode) -> i32 {
             | "brace_group"
             | "subshell"
             | "list"
+            | "dbracket"
     );
 
     if !uses_left_right
@@ -93,6 +94,7 @@ pub fn exec_node(node: &ASTNode) -> i32 {
         }
         "function" => return exec_function(node),
         "case" => return exec_case(node),
+        "dbracket" => return exec_dbracket(node),
         _ => {}
     }
 
@@ -300,6 +302,8 @@ fn exec_command(args: &[String], foreground: bool) -> i32 {
         "bg" => builtin_bg(&args[1..]),
         "export" => builtin_export(&args[1..]),
         "set" => builtin_set(&args[1..]),
+        "setopt" => builtin_setopt(&args[1..]),
+        "unsetopt" => builtin_unsetopt(&args[1..]),
         "unset" => builtin_unset(&args[1..]),
         "alias" => builtin_alias(&args[1..]),
         "unalias" => builtin_unalias(&args[1..]),
@@ -494,6 +498,12 @@ fn exec_list(node: &ASTNode) -> i32 {
     for n in &node.pipes {
         status = exec_node(n);
         SHELL.shell.lock().unwrap().last_status = status;
+        if status != 0 {
+            let opts = SHELL.shell.lock().unwrap().opts;
+            if opts & crate::types::OPT_ERREXIT != 0 {
+                std::process::exit(status);
+            }
+        }
     }
     status
 }
@@ -578,6 +588,125 @@ fn exec_case(node: &ASTNode) -> i32 {
         }
     }
     0
+}
+
+fn exec_dbracket(node: &ASTNode) -> i32 {
+    // Inside [[ ]] zsh suppresses filesystem globbing on operands so that
+    // patterns like `screen*` on the RHS of `==` are matched against the LHS,
+    // not expanded against the cwd.
+    let saved_opts = SHELL.shell.lock().unwrap().opts;
+    SHELL.shell.lock().unwrap().opts |= crate::types::OPT_NOGLOB;
+    let toks: Vec<String> = node.args.iter().map(|a| expand_all(a)).collect();
+    SHELL.shell.lock().unwrap().opts = saved_opts;
+
+    let (result, _) = dbracket_or(&toks, 0);
+    if result {
+        0
+    } else {
+        1
+    }
+}
+
+fn dbracket_or(toks: &[String], pos: usize) -> (bool, usize) {
+    let (mut left, mut p) = dbracket_and(toks, pos);
+    while p < toks.len() && toks[p] == "||" {
+        let (right, np) = dbracket_and(toks, p + 1);
+        left = left || right;
+        p = np;
+    }
+    (left, p)
+}
+
+fn dbracket_and(toks: &[String], pos: usize) -> (bool, usize) {
+    let (mut left, mut p) = dbracket_unary(toks, pos);
+    while p < toks.len() && toks[p] == "&&" {
+        let (right, np) = dbracket_unary(toks, p + 1);
+        left = left && right;
+        p = np;
+    }
+    (left, p)
+}
+
+fn dbracket_unary(toks: &[String], pos: usize) -> (bool, usize) {
+    if pos < toks.len() && toks[pos] == "!" {
+        let (v, p) = dbracket_unary(toks, pos + 1);
+        return (!v, p);
+    }
+    dbracket_primary(toks, pos)
+}
+
+fn dbracket_primary(toks: &[String], pos: usize) -> (bool, usize) {
+    if pos >= toks.len() {
+        return (false, pos);
+    }
+    if toks[pos] == "(" {
+        let (v, p) = dbracket_or(toks, pos + 1);
+        let p = if p < toks.len() && toks[p] == ")" { p + 1 } else { p };
+        return (v, p);
+    }
+    let unary_ops = [
+        "-n", "-z", "-d", "-e", "-f", "-r", "-w", "-x", "-s", "-h", "-L", "-b", "-c", "-p", "-S",
+    ];
+    if unary_ops.contains(&toks[pos].as_str()) && pos + 1 < toks.len() {
+        let arg = &toks[pos + 1];
+        let path = Path::new(arg);
+        let result = match toks[pos].as_str() {
+            "-n" => !arg.is_empty(),
+            "-z" => arg.is_empty(),
+            "-d" => path.is_dir(),
+            "-e" => path.exists(),
+            "-f" => path.is_file(),
+            "-s" => path.metadata().map(|m| m.len() > 0).unwrap_or(false),
+            "-h" | "-L" => path
+                .symlink_metadata()
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false),
+            "-r" | "-w" | "-x" => {
+                let mode = match toks[pos].as_str() {
+                    "-r" => libc::R_OK,
+                    "-w" => libc::W_OK,
+                    _ => libc::X_OK,
+                };
+                std::ffi::CString::new(arg.as_bytes())
+                    .map(|cs| unsafe { libc::access(cs.as_ptr(), mode) == 0 })
+                    .unwrap_or(false)
+            }
+            _ => false,
+        };
+        return (result, pos + 2);
+    }
+    if pos + 2 < toks.len() {
+        let lhs = &toks[pos];
+        let op = toks[pos + 1].as_str();
+        let rhs = &toks[pos + 2];
+        let result = match op {
+            "=" | "==" => glob_match(lhs, rhs),
+            "!=" => !glob_match(lhs, rhs),
+            "<" => lhs < rhs,
+            ">" => lhs > rhs,
+            "-eq" => parse_int(lhs) == parse_int(rhs),
+            "-ne" => parse_int(lhs) != parse_int(rhs),
+            "-lt" => parse_int(lhs) < parse_int(rhs),
+            "-le" => parse_int(lhs) <= parse_int(rhs),
+            "-gt" => parse_int(lhs) > parse_int(rhs),
+            "-ge" => parse_int(lhs) >= parse_int(rhs),
+            "-ef" | "-nt" | "-ot" => false,
+            _ => return (!toks[pos].is_empty(), pos + 1),
+        };
+        return (result, pos + 3);
+    }
+    (!toks[pos].is_empty(), pos + 1)
+}
+
+fn glob_match(value: &str, pattern: &str) -> bool {
+    match glob::Pattern::new(pattern) {
+        Ok(p) => p.matches(value),
+        Err(_) => value == pattern,
+    }
+}
+
+fn parse_int(s: &str) -> i64 {
+    s.trim().parse::<i64>().unwrap_or(0)
 }
 
 // Builtins
@@ -708,6 +837,80 @@ fn builtin_set(args: &[String]) -> i32 {
         i += 1;
     }
     0
+}
+
+fn builtin_setopt(args: &[String]) -> i32 {
+    if args.is_empty() {
+        let shell = SHELL.shell.lock().unwrap();
+        let mut keys: Vec<&String> = shell
+            .named_opts
+            .iter()
+            .filter(|(_, v)| **v)
+            .map(|(k, _)| k)
+            .collect();
+        keys.sort();
+        for k in keys {
+            println!("{}", k);
+        }
+        return 0;
+    }
+    for arg in args {
+        // -o NAME / +o NAME forms set or unset by long name.
+        if arg == "-o" || arg == "+o" {
+            // Name is in the next arg; handled by the runner.
+            continue;
+        }
+        if arg.starts_with('-') || arg.starts_with('+') {
+            // Letter-flag forms (e.g. -e for errexit) — defer to `set`.
+            continue;
+        }
+        toggle_named_opt(arg, true);
+    }
+    0
+}
+
+fn builtin_unsetopt(args: &[String]) -> i32 {
+    for arg in args {
+        if arg == "-o" || arg == "+o" {
+            continue;
+        }
+        if arg.starts_with('-') || arg.starts_with('+') {
+            continue;
+        }
+        toggle_named_opt(arg, false);
+    }
+    0
+}
+
+fn toggle_named_opt(name: &str, value: bool) {
+    let normalized: String = name.to_ascii_lowercase().chars().filter(|c| *c != '_').collect();
+    SHELL
+        .shell
+        .lock()
+        .unwrap()
+        .named_opts
+        .insert(normalized.clone(), value);
+    let opt_flag = match normalized.as_str() {
+        "errexit" => crate::types::OPT_ERREXIT,
+        "noexec" => crate::types::OPT_NOEXEC,
+        "verbose" => crate::types::OPT_VERBOSE,
+        "xtrace" => crate::types::OPT_XTRACE,
+        "nounset" => crate::types::OPT_NOUNSET,
+        "noglob" => crate::types::OPT_NOGLOB,
+        "noclobber" => crate::types::OPT_NOCLOBBER,
+        "monitor" => crate::types::OPT_MONITOR,
+        "allexport" => crate::types::OPT_ALLEXPORT,
+        "hashall" => crate::types::OPT_HASHALL,
+        _ => 0,
+    };
+    if opt_flag != 0 {
+        let mut shell = SHELL.shell.lock().unwrap();
+        if value {
+            shell.opts |= opt_flag;
+        } else {
+            shell.opts &= !opt_flag;
+        }
+    }
 }
 
 fn builtin_unset(args: &[String]) -> i32 {

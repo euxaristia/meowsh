@@ -86,6 +86,10 @@ pub struct Shell {
     // its prior global value (None = the variable was unset before being
     // declared local). Pushed on function entry, popped on return.
     pub local_scopes: Vec<HashMap<String, Option<Var>>>,
+    // Zsh-style named options (setopt/unsetopt). Keys are normalized to
+    // lowercase with underscores stripped. Most are stubs for Phase 1;
+    // the subset that maps to a legacy OPT_* flag also toggles that flag.
+    pub named_opts: HashMap<String, bool>,
 }
 
 impl Shell {
@@ -112,6 +116,7 @@ impl Shell {
             functions: HashMap::new(),
             lineno: 0,
             local_scopes: Vec::new(),
+            named_opts: HashMap::new(),
         }
     }
 }

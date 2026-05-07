@@ -17,6 +17,14 @@ impl<'a> Parser<'a> {
     fn parse_command_list(&mut self, top_level: bool) -> (Option<ASTNode>, bool) {
         let mut nodes = Vec::new();
 
+        // Skip blank lines at the start of a top-level parse so they don't
+        // make `parse()` return None and falsely terminate the script.
+        if top_level {
+            while self.peek_token().token_type == TokenType::Newline {
+                self.lexer.next_token();
+            }
+        }
+
         loop {
             let tok = self.peek_token();
             if tok.token_type == TokenType::Eof
@@ -68,9 +76,12 @@ impl<'a> Parser<'a> {
     }
 
     fn is_reserved_end(value: &str) -> bool {
+        // The lexer doesn't emit a dedicated Rbrace token for `}` — it
+        // comes back as a Word — so we treat the literal value as a
+        // command-list terminator alongside the other reserved words.
         matches!(
             value,
-            "done" | "fi" | "esac" | "else" | "elif" | "then" | "do"
+            "done" | "fi" | "esac" | "else" | "elif" | "then" | "do" | "}"
         )
     }
 
@@ -86,6 +97,15 @@ impl<'a> Parser<'a> {
             || tok.token_type == TokenType::Semi
         {
             return None;
+        }
+
+        // POSIX function definition: name ( )  followed by compound command.
+        if tok.token_type == TokenType::Word && self.is_posix_func_def() {
+            return self.parse_posix_function();
+        }
+
+        if tok.value == "[[" {
+            return Some(self.parse_dbracket());
         }
 
         match tok.value.as_str() {
@@ -118,6 +138,78 @@ impl<'a> Parser<'a> {
             "function" => self.parse_function(),
             _ => self.parse_simple_command(),
         }
+    }
+
+    fn is_posix_func_def(&mut self) -> bool {
+        let mut clone = self.lexer.clone();
+        let name = clone.next_token();
+        if name.token_type != TokenType::Word {
+            return false;
+        }
+        // Reserved words and the "function" keyword don't form POSIX defs.
+        if matches!(
+            name.value.as_str(),
+            "if" | "while"
+                | "until"
+                | "for"
+                | "case"
+                | "function"
+                | "then"
+                | "else"
+                | "elif"
+                | "fi"
+                | "do"
+                | "done"
+                | "esac"
+                | "in"
+                | "{"
+                | "}"
+                | "!"
+        ) {
+            return false;
+        }
+        let lparen = clone.next_token();
+        if lparen.token_type != TokenType::Lparen {
+            return false;
+        }
+        let rparen = clone.next_token();
+        rparen.token_type == TokenType::Rparen
+    }
+
+    fn parse_posix_function(&mut self) -> Option<ASTNode> {
+        let name = self.lexer.next_token().value;
+        self.lexer.next_token(); // (
+        self.lexer.next_token(); // )
+        self.skip_newlines();
+        let body = self.parse_command();
+        let mut node = ASTNode::new("function");
+        node.func_name = name;
+        node.func_body = body.map(Box::new);
+        Some(node)
+    }
+
+    // [[ expr ]] conditional. The lexer hands us each inner token as-is
+    // (including `&&`, `||`, `(`, `)`, and operator/operand words). We
+    // collect raw values until `]]` and let the executor evaluate.
+    fn parse_dbracket(&mut self) -> ASTNode {
+        self.lexer.next_token(); // [[
+        let mut args: Vec<String> = Vec::new();
+        loop {
+            let tok = self.lexer.next_token();
+            if tok.token_type == TokenType::Eof {
+                break;
+            }
+            if tok.value == "]]" {
+                break;
+            }
+            if tok.token_type == TokenType::Newline {
+                continue;
+            }
+            args.push(tok.value);
+        }
+        let mut node = ASTNode::new("dbracket");
+        node.args = args;
+        node
     }
 
     fn parse_simple_command(&mut self) -> Option<ASTNode> {

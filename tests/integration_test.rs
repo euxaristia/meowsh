@@ -5,7 +5,11 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn run_script(script: &str) -> (i32, String, String) {
+    // Point HOME at a fresh empty tempdir so the user's real ~/.zshrc /
+    // ~/.zshenv don't get sourced into the test environment.
+    let home = TempDir::new().expect("tempdir for HOME");
     let child = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", home.path())
         .arg("-i")
         .arg("-c")
         .arg(script)
@@ -247,4 +251,157 @@ fn test_history_limit() {
     assert!(!stdout.contains("cmd0 "));
     // cmd1999 should be there
     assert!(stdout.contains("cmd1999"));
+}
+
+// ---- Phase 1: typical .zshrc compatibility -------------------------------
+
+#[test]
+fn test_dbracket_string_equal() {
+    let (status, stdout, _) = run_script(r#"[[ "abc" = "abc" ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_string_not_equal() {
+    let (status, stdout, _) = run_script(r#"[[ "abc" != "xyz" ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_unary_n() {
+    let (status, stdout, _) = run_script(r#"x=hello; [[ -n "$x" ]] && echo nonempty"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "nonempty");
+}
+
+#[test]
+fn test_dbracket_unary_z() {
+    let (status, stdout, _) = run_script(r#"x=; [[ -z "$x" ]] && echo empty"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "empty");
+}
+
+#[test]
+fn test_dbracket_arith_gt() {
+    let (status, stdout, _) = run_script(r#"[[ 5 -gt 3 ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_logical_and() {
+    let (status, stdout, _) = run_script(r#"x=1; [[ -n "$x" && 1 -lt 5 ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_logical_or() {
+    let (status, stdout, _) = run_script(r#"[[ -z foo || -n bar ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_glob_pattern() {
+    let (status, stdout, _) = run_script(r#"v=screen.xterm; [[ "$v" == screen* ]] && echo match"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "match");
+}
+
+#[test]
+fn test_posix_function_def() {
+    let (status, stdout, _) = run_script(r#"greet() { echo hi $1; }; greet world"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "hi world");
+}
+
+#[test]
+fn test_posix_function_multiline() {
+    let (status, stdout, _) = run_script(
+        "greet() {\n  echo line1\n  echo line2\n}\ngreet",
+    );
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "line1\nline2");
+}
+
+#[test]
+fn test_setopt_errexit_named() {
+    let (status, stdout, _) = run_script("setopt errexit; false; echo unreached");
+    assert_ne!(status, 0);
+    assert!(!stdout.contains("unreached"));
+}
+
+#[test]
+fn test_setopt_unknown_does_not_error() {
+    let (status, stdout, _) =
+        run_script("setopt extendedglob nomatch hist_ignore_dups; echo done");
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "done");
+}
+
+#[test]
+fn test_unsetopt_clears_legacy_flag() {
+    // setopt errexit then unsetopt — `false` should NOT cause exit
+    let (status, stdout, _) =
+        run_script("setopt errexit; unsetopt errexit; false; echo reached");
+    assert_eq!(status, 0);
+    assert!(stdout.contains("reached"));
+}
+
+#[test]
+fn test_zshenv_sourced_always() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join(".zshenv"), "FOO=zshenv_value\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", temp_dir.path())
+        .arg("-c")
+        .arg("echo $FOO")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn meowsh");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(stdout.trim(), "zshenv_value");
+}
+
+#[test]
+fn test_zshrc_sourced_when_interactive() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join(".zshrc"), "BAR=zshrc_value\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", temp_dir.path())
+        .arg("-i")
+        .arg("-c")
+        .arg("echo $BAR")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn meowsh");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(stdout.trim(), "zshrc_value");
+}
+
+#[test]
+fn test_zshrc_skipped_when_noninteractive() {
+    let temp_dir = TempDir::new().unwrap();
+    // .zshrc would set BAZ to "should_not_appear" — but in a non-interactive
+    // shell .zshrc must not be sourced.
+    fs::write(temp_dir.path().join(".zshrc"), "BAZ=should_not_appear\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", temp_dir.path())
+        .arg("-c")
+        .arg("echo result=$BAZ")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn meowsh");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(stdout.trim(), "result=");
 }
