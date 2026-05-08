@@ -276,26 +276,6 @@ pub fn declare_local(name: &str) -> bool {
     }
 }
 
-pub fn is_assignment(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    let bytes = s.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'=' {
-            return i > 0;
-        }
-        if b == b'+' && bytes.get(i + 1) == Some(&b'=') {
-            return i > 0;
-        }
-        let c = b as char;
-        if !c.is_alphabetic() && !c.is_ascii_digit() && b != b'_' {
-            return false;
-        }
-    }
-    false
-}
-
 pub fn shorten_path(p: &str) -> String {
     let home = var_get("HOME");
     if !home.is_empty() && p.starts_with(&home) {
@@ -348,14 +328,7 @@ pub fn expand_prompt(s: &str) -> String {
             Some('D') => {
                 if chars.peek() == Some(&'{') {
                     chars.next();
-                    let mut fmt = String::new();
-                    while let Some(&ch) = chars.peek() {
-                        chars.next();
-                        if ch == '}' {
-                            break;
-                        }
-                        fmt.push(ch);
-                    }
+                    let fmt = read_until_brace(&mut chars);
                     out.push_str(&time_fmt(&fmt));
                 } else {
                     out.push_str(&time_fmt("%y-%m-%d"));
@@ -471,15 +444,15 @@ fn time_fmt(fmt: &str) -> String {
     unsafe {
         let mut t: libc::time_t = 0;
         libc::time(&mut t);
-        let tm = libc::localtime(&t);
-        if tm.is_null() {
+        let mut tm: libc::tm = std::mem::zeroed();
+        if libc::localtime_r(&t, &mut tm).is_null() {
             return String::new();
         }
         let n = libc::strftime(
             buf.as_mut_ptr() as *mut libc::c_char,
             buf.len(),
             cfmt.as_ptr(),
-            tm,
+            &tm,
         );
         if n == 0 {
             return String::new();

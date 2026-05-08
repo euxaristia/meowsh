@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub const OPT_ALLEXPORT: u32 = 1 << 0;
 pub const OPT_ERREXIT: u32 = 1 << 1;
@@ -58,7 +58,7 @@ pub struct Process {
 
 #[derive(Clone)]
 pub struct FuncDef {
-    pub body: ASTNode,
+    pub body: Arc<ASTNode>,
 }
 
 pub struct Shell {

@@ -4,7 +4,7 @@ fn is_operator(c: char) -> bool {
     matches!(c, '|' | '&' | ';' | '<' | '>' | '(' | ')')
 }
 
-fn is_assignment(s: &str) -> bool {
+pub fn is_assignment(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }

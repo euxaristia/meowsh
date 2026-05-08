@@ -607,7 +607,7 @@ fn substitute(
     let matches_at = |s: &str| -> Option<usize> {
         if !has_meta {
             // Literal substring match — much faster than per-substring glob.
-            return s.find(pat).map(|_| pat.len());
+            return if s.starts_with(pat) { Some(pat.len()) } else { None };
         }
         // Glob path: try increasing lengths starting from `s`.
         let glob_pat = glob_pat.as_ref()?;
@@ -659,15 +659,13 @@ fn substitute(
     // Glob unanchored: scan positions.
     let mut out = String::new();
     let mut i = 0;
-    let bytes = value.as_bytes();
-    while i <= bytes.len() {
+    while i < value.len() {
         let suffix = &value[i..];
         if let Some(len) = matches_at(suffix) {
             if len == 0 {
-                if i < bytes.len() {
-                    out.push(bytes[i] as char);
-                }
-                i += 1;
+                let c = suffix.chars().next().unwrap();
+                out.push(c);
+                i += c.len_utf8();
                 continue;
             }
             out.push_str(repl);
@@ -677,10 +675,9 @@ fn substitute(
                 return out;
             }
         } else {
-            if i < bytes.len() {
-                out.push(bytes[i] as char);
-            }
-            i += 1;
+            let c = suffix.chars().next().unwrap();
+            out.push(c);
+            i += c.len_utf8();
         }
     }
     out

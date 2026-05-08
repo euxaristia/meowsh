@@ -167,11 +167,9 @@ fn exec_simple(node: &ASTNode) -> i32 {
             SHELL.shell.lock().unwrap().pos_params = expanded_args[1..].to_vec();
 
             push_scope();
-            let _scope_guard = ScopeGuard;
+            let _scope_guard = ScopeGuard { old_params };
 
             exec_node(&body);
-
-            SHELL.shell.lock().unwrap().pos_params = old_params;
             return SHELL.shell.lock().unwrap().last_status;
         }
     }
@@ -294,11 +292,22 @@ struct SavedFds {
     stderr: OwnedFd,
 }
 
-struct ScopeGuard;
+struct ScopeGuard {
+    old_params: Vec<String>,
+}
 
 impl Drop for ScopeGuard {
     fn drop(&mut self) {
         pop_scope();
+        SHELL.shell.lock().unwrap().pos_params = std::mem::take(&mut self.old_params);
+    }
+}
+
+struct OptsGuard(u32);
+
+impl Drop for OptsGuard {
+    fn drop(&mut self) {
+        SHELL.shell.lock().unwrap().opts = self.0;
     }
 }
 
@@ -631,7 +640,7 @@ fn expand_loop_word(w: &str) -> Vec<String> {
 fn exec_function(node: &ASTNode) -> i32 {
     if let Some(ref body) = node.func_body {
         let func = crate::types::FuncDef {
-            body: (**body).clone(),
+            body: std::sync::Arc::new((**body).clone()),
         };
         SHELL
             .shell
@@ -661,9 +670,9 @@ fn exec_dbracket(node: &ASTNode) -> i32 {
     // patterns like `screen*` on the RHS of `==` are matched against the LHS,
     // not expanded against the cwd.
     let saved_opts = SHELL.shell.lock().unwrap().opts;
+    let _guard = OptsGuard(saved_opts);
     SHELL.shell.lock().unwrap().opts |= crate::types::OPT_NOGLOB;
     let toks: Vec<String> = node.args.iter().map(|a| expand_all(a)).collect();
-    SHELL.shell.lock().unwrap().opts = saved_opts;
 
     let (result, _) = dbracket_or(&toks, 0);
     if result {
@@ -757,7 +766,7 @@ fn dbracket_primary(toks: &[String], pos: usize) -> (bool, usize) {
             "-gt" => parse_int(lhs) > parse_int(rhs),
             "-ge" => parse_int(lhs) >= parse_int(rhs),
             "-ef" | "-nt" | "-ot" => false,
-            _ => return (!toks[pos].is_empty(), pos + 1),
+            _ => false,
         };
         return (result, pos + 3);
     }
@@ -942,7 +951,7 @@ fn builtin_autoload(args: &[String]) -> i32 {
             body.body = Some(Box::new(ASTNode::new("empty")));
             SHELL.shell.lock().unwrap().functions.insert(
                 arg.clone(),
-                crate::types::FuncDef { body },
+                crate::types::FuncDef { body: std::sync::Arc::new(body) },
             );
         }
     }
@@ -964,42 +973,59 @@ fn builtin_setopt(args: &[String]) -> i32 {
         }
         return 0;
     }
-    for arg in args {
-        // -o NAME / +o NAME forms set or unset by long name.
-        if arg == "-o" || arg == "+o" {
-            // Name is in the next arg; handled by the runner.
-            continue;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "-o" {
+            if i + 1 < args.len() {
+                toggle_named_opt(&args[i + 1], true);
+                i += 2;
+                continue;
+            } else {
+                eprintln!("meowsh: setopt: -o requires an argument");
+                return 1;
+            }
         }
         if arg.starts_with('-') || arg.starts_with('+') {
-            // Letter-flag forms (e.g. -e for errexit) — defer to `set`.
+            eprintln!("meowsh: setopt: unsupported option: {}", arg);
+            i += 1;
             continue;
         }
         toggle_named_opt(arg, true);
+        i += 1;
     }
     0
 }
 
 fn builtin_unsetopt(args: &[String]) -> i32 {
-    for arg in args {
-        if arg == "-o" || arg == "+o" {
-            continue;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "-o" {
+            if i + 1 < args.len() {
+                toggle_named_opt(&args[i + 1], false);
+                i += 2;
+                continue;
+            } else {
+                eprintln!("meowsh: unsetopt: -o requires an argument");
+                return 1;
+            }
         }
         if arg.starts_with('-') || arg.starts_with('+') {
+            eprintln!("meowsh: unsetopt: unsupported option: {}", arg);
+            i += 1;
             continue;
         }
         toggle_named_opt(arg, false);
+        i += 1;
     }
     0
 }
 
 fn toggle_named_opt(name: &str, value: bool) {
     let normalized: String = name.to_ascii_lowercase().chars().filter(|c| *c != '_').collect();
-    SHELL
-        .shell
-        .lock()
-        .unwrap()
-        .named_opts
-        .insert(normalized.clone(), value);
+    let mut shell = SHELL.shell.lock().unwrap();
+    shell.named_opts.insert(normalized.clone(), value);
     let opt_flag = match normalized.as_str() {
         "errexit" => crate::types::OPT_ERREXIT,
         "noexec" => crate::types::OPT_NOEXEC,
@@ -1014,7 +1040,6 @@ fn toggle_named_opt(name: &str, value: bool) {
         _ => 0,
     };
     if opt_flag != 0 {
-        let mut shell = SHELL.shell.lock().unwrap();
         if value {
             shell.opts |= opt_flag;
         } else {
@@ -1024,10 +1049,12 @@ fn toggle_named_opt(name: &str, value: bool) {
 }
 
 fn builtin_unset(args: &[String]) -> i32 {
-    for arg in args {
+    {
         let mut shell = SHELL.shell.lock().unwrap();
-        shell.vars.remove(arg);
-        shell.arrays.remove(arg);
+        for arg in args {
+            shell.vars.remove(arg);
+            shell.arrays.remove(arg);
+        }
     }
     for arg in args {
         env::remove_var(arg);

@@ -197,6 +197,7 @@ impl<'a> Parser<'a> {
         loop {
             let tok = self.lexer.next_token();
             if tok.token_type == TokenType::Eof {
+                eprintln!("meowsh: syntax error: unexpected end of file in [[ ... ]]");
                 break;
             }
             if tok.value == "]]" {
