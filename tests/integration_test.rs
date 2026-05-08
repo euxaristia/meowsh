@@ -5,7 +5,11 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn run_script(script: &str) -> (i32, String, String) {
+    // Point HOME at a fresh empty tempdir so the user's real ~/.zshrc /
+    // ~/.zshenv don't get sourced into the test environment.
+    let home = TempDir::new().expect("tempdir for HOME");
     let child = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", home.path())
         .arg("-i")
         .arg("-c")
         .arg(script)
@@ -247,4 +251,298 @@ fn test_history_limit() {
     assert!(!stdout.contains("cmd0 "));
     // cmd1999 should be there
     assert!(stdout.contains("cmd1999"));
+}
+
+// ---- Phase 1: typical .zshrc compatibility -------------------------------
+
+#[test]
+fn test_dbracket_string_equal() {
+    let (status, stdout, _) = run_script(r#"[[ "abc" = "abc" ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_string_not_equal() {
+    let (status, stdout, _) = run_script(r#"[[ "abc" != "xyz" ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_unary_n() {
+    let (status, stdout, _) = run_script(r#"x=hello; [[ -n "$x" ]] && echo nonempty"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "nonempty");
+}
+
+#[test]
+fn test_dbracket_unary_z() {
+    let (status, stdout, _) = run_script(r#"x=; [[ -z "$x" ]] && echo empty"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "empty");
+}
+
+#[test]
+fn test_dbracket_arith_gt() {
+    let (status, stdout, _) = run_script(r#"[[ 5 -gt 3 ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_logical_and() {
+    let (status, stdout, _) = run_script(r#"x=1; [[ -n "$x" && 1 -lt 5 ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_logical_or() {
+    let (status, stdout, _) = run_script(r#"[[ -z foo || -n bar ]] && echo yes"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "yes");
+}
+
+#[test]
+fn test_dbracket_glob_pattern() {
+    let (status, stdout, _) = run_script(r#"v=screen.xterm; [[ "$v" == screen* ]] && echo match"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "match");
+}
+
+#[test]
+fn test_posix_function_def() {
+    let (status, stdout, _) = run_script(r#"greet() { echo hi $1; }; greet world"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "hi world");
+}
+
+#[test]
+fn test_posix_function_multiline() {
+    let (status, stdout, _) = run_script(
+        "greet() {\n  echo line1\n  echo line2\n}\ngreet",
+    );
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "line1\nline2");
+}
+
+#[test]
+fn test_setopt_errexit_named() {
+    let (status, stdout, _) = run_script("setopt errexit; false; echo unreached");
+    assert_ne!(status, 0);
+    assert!(!stdout.contains("unreached"));
+}
+
+#[test]
+fn test_setopt_unknown_does_not_error() {
+    let (status, stdout, _) =
+        run_script("setopt extendedglob nomatch hist_ignore_dups; echo done");
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "done");
+}
+
+#[test]
+fn test_unsetopt_clears_legacy_flag() {
+    // setopt errexit then unsetopt — `false` should NOT cause exit
+    let (status, stdout, _) =
+        run_script("setopt errexit; unsetopt errexit; false; echo reached");
+    assert_eq!(status, 0);
+    assert!(stdout.contains("reached"));
+}
+
+#[test]
+fn test_zshenv_sourced_always() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join(".zshenv"), "FOO=zshenv_value\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", temp_dir.path())
+        .arg("-c")
+        .arg("echo $FOO")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn meowsh");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(stdout.trim(), "zshenv_value");
+}
+
+#[test]
+fn test_zshrc_sourced_when_interactive() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join(".zshrc"), "BAR=zshrc_value\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", temp_dir.path())
+        .arg("-i")
+        .arg("-c")
+        .arg("echo $BAR")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn meowsh");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(stdout.trim(), "zshrc_value");
+}
+
+// ---- Phase 2A: arrays + parameter substitution + stubs ------------------
+
+#[test]
+fn test_array_assign_and_join() {
+    let (status, stdout, _) = run_script(r#"arr=(foo bar baz); echo "$arr""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "foo bar baz");
+}
+
+#[test]
+fn test_array_index_one_based() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(alpha beta gamma); echo "${arr[1]} ${arr[3]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "alpha gamma");
+}
+
+#[test]
+fn test_array_at_splat() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(a b c); echo "${arr[@]}"; echo "${arr[*]}""#);
+    assert_eq!(status, 0);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+    assert_eq!(lines, vec!["a b c", "a b c"]);
+}
+
+#[test]
+fn test_array_length() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(one two three four); echo "${#arr[@]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "4");
+}
+
+#[test]
+fn test_array_append() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(a b); arr+=(c d); echo "${arr[@]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "a b c d");
+}
+
+#[test]
+fn test_array_with_var_expansion_in_literal() {
+    let (status, stdout, _) =
+        run_script(r#"x=hello; arr=($x world); echo "${arr[1]}-${arr[2]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "hello-world");
+}
+
+#[test]
+fn test_array_negative_index() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(red green blue); echo "${arr[-1]} ${arr[-2]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "blue green");
+}
+
+#[test]
+fn test_subst_first_match() {
+    let (status, stdout, _) =
+        run_script(r#"v=aXbXc; echo "${v/X/_}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "a_bXc");
+}
+
+#[test]
+fn test_subst_global() {
+    let (status, stdout, _) =
+        run_script(r#"v=aXbXc; echo "${v//X/_}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "a_b_c");
+}
+
+#[test]
+fn test_subst_path_separator() {
+    let (status, stdout, _) =
+        run_script(r#"p=/usr/local/bin; echo "${p//\//.}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), ".usr.local.bin");
+}
+
+#[test]
+fn test_subst_anchor_start() {
+    let (status, stdout, _) =
+        run_script(r#"v=foofoo; echo "${v/#foo/bar}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "barfoo");
+}
+
+#[test]
+fn test_subst_anchor_end() {
+    let (status, stdout, _) =
+        run_script(r#"v=foofoo; echo "${v/%foo/bar}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "foobar");
+}
+
+#[test]
+fn test_scalar_append() {
+    let (status, stdout, _) =
+        run_script(r#"x=hello; x+=" world"; echo "$x""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "hello world");
+}
+
+#[test]
+fn test_zstyle_stub_no_error() {
+    let (status, stdout, _) =
+        run_script(r#"zstyle ':completion:*' menu select; echo done"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "done");
+}
+
+#[test]
+fn test_compsys_stubs_no_error() {
+    let (status, stdout, _) = run_script(
+        r#"autoload -Uz compinit; compinit; compdef _gnu_generic ls; bindkey -e; echo ok"#,
+    );
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "ok");
+}
+
+#[test]
+fn test_add_zsh_hook_stub_no_error() {
+    let (status, stdout, _) =
+        run_script(r#"add-zsh-hook precmd my_hook; echo done"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "done");
+}
+
+#[test]
+fn test_for_loop_over_array() {
+    let (status, stdout, _) = run_script(
+        r#"arr=(a b c); for x in "${arr[@]}"; do echo "got $x"; done"#,
+    );
+    assert_eq!(status, 0);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+    assert_eq!(lines, vec!["got a", "got b", "got c"]);
+}
+
+#[test]
+fn test_zshrc_skipped_when_noninteractive() {
+    let temp_dir = TempDir::new().unwrap();
+    // .zshrc would set BAZ to "should_not_appear" — but in a non-interactive
+    // shell .zshrc must not be sourced.
+    fs::write(temp_dir.path().join(".zshrc"), "BAZ=should_not_appear\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_meowsh"))
+        .env("HOME", temp_dir.path())
+        .arg("-c")
+        .arg("echo result=$BAZ")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn meowsh");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(stdout.trim(), "result=");
 }

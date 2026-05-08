@@ -4,15 +4,21 @@ fn is_operator(c: char) -> bool {
     matches!(c, '|' | '&' | ';' | '<' | '>' | '(' | ')')
 }
 
-fn is_assignment(s: &str) -> bool {
+pub fn is_assignment(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    for (i, c) in s.chars().enumerate() {
-        if c == '=' {
+    let bytes = s.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'=' {
             return i > 0;
         }
-        if !c.is_alphabetic() && !c.is_ascii_digit() && c != '_' {
+        // `name+=` form (zsh/bash append assignment).
+        if b == b'+' && bytes.get(i + 1) == Some(&b'=') {
+            return i > 0;
+        }
+        let c = b as char;
+        if !c.is_alphabetic() && !c.is_ascii_digit() && b != b'_' {
             return false;
         }
     }

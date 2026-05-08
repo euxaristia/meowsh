@@ -1,9 +1,13 @@
 use libc::{isatty, signal, SIGINT, SIGQUIT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIG_IGN};
-use meowsh::exec::execute_line;
+use meowsh::exec::{exec_node, execute_line};
+use meowsh::lexer::Lexer;
 use meowsh::lineedit::{run_interactive, run_noninteractive};
+use meowsh::parser::Parser;
 use meowsh::shell::{shell_init, SHELL};
 use meowsh::types::OPT_INTERACTIVE;
 use std::env;
+use std::fs;
+use std::path::Path;
 
 fn main() {
     shell_init();
@@ -20,10 +24,16 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
     let (interactive_flag, script_to_run) = parse_args(&args);
-    
+
     let interactive = interactive_flag.unwrap_or_else(|| unsafe { isatty(0) != 0 });
+    let login_shell = args
+        .first()
+        .map(|a| a.starts_with('-'))
+        .unwrap_or(false)
+        || args.iter().any(|a| a == "-l" || a == "--login");
 
     SHELL.shell.lock().unwrap().interactive = interactive;
+    SHELL.shell.lock().unwrap().login_shell = login_shell;
 
     if interactive {
         SHELL.shell.lock().unwrap().opts |= OPT_INTERACTIVE;
@@ -32,6 +42,14 @@ fn main() {
     if !args.is_empty() {
         SHELL.shell.lock().unwrap().argv0 = args[0].clone();
     }
+
+    // Source zsh-style startup files. Order matches zsh:
+    //   .zshenv  always
+    //   .zprofile  login only
+    //   .zshrc  interactive only
+    //   .zlogin  login + interactive
+    // Missing files are skipped silently.
+    source_startup_files(login_shell, interactive);
 
     // Handle -c option
     if let Some(script) = script_to_run {
@@ -43,6 +61,45 @@ fn main() {
         run_interactive();
     } else {
         run_noninteractive();
+    }
+}
+
+fn source_startup_files(login: bool, interactive: bool) {
+    let home = SHELL
+        .shell
+        .lock()
+        .unwrap()
+        .vars
+        .get("HOME")
+        .map(|v| v.value.clone())
+        .unwrap_or_default();
+    if home.is_empty() {
+        return;
+    }
+    let home_path = Path::new(&home);
+    source_file_silent(&home_path.join(".zshenv").to_string_lossy());
+    if login {
+        source_file_silent(&home_path.join(".zprofile").to_string_lossy());
+    }
+    if interactive {
+        source_file_silent(&home_path.join(".zshrc").to_string_lossy());
+    }
+    if login && interactive {
+        source_file_silent(&home_path.join(".zlogin").to_string_lossy());
+    }
+}
+
+fn source_file_silent(path: &str) {
+    if !Path::new(path).is_file() {
+        return;
+    }
+    let Ok(content) = fs::read_to_string(path) else {
+        return;
+    };
+    let mut lexer = Lexer::new(&content);
+    let mut parser = Parser::new(&mut lexer);
+    while let Some(node) = parser.parse() {
+        exec_node(&node);
     }
 }
 
