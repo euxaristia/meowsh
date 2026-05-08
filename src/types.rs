@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub const OPT_ALLEXPORT: u32 = 1 << 0;
 pub const OPT_ERREXIT: u32 = 1 << 1;
@@ -58,7 +58,7 @@ pub struct Process {
 
 #[derive(Clone)]
 pub struct FuncDef {
-    pub body: ASTNode,
+    pub body: Arc<ASTNode>,
 }
 
 pub struct Shell {
@@ -90,6 +90,9 @@ pub struct Shell {
     // lowercase with underscores stripped. Most are stubs for Phase 1;
     // the subset that maps to a legacy OPT_* flag also toggles that flag.
     pub named_opts: HashMap<String, bool>,
+    // Indexed arrays (zsh-style, 1-based at the user level). Stored 0-based.
+    // A name that exists in `arrays` shadows any same-named scalar in `vars`.
+    pub arrays: HashMap<String, Vec<String>>,
 }
 
 impl Shell {
@@ -117,6 +120,7 @@ impl Shell {
             lineno: 0,
             local_scopes: Vec::new(),
             named_opts: HashMap::new(),
+            arrays: HashMap::new(),
         }
     }
 }
@@ -195,6 +199,12 @@ pub struct ASTNode {
     pub value: String,
     pub args: Vec<String>,
     pub assigns: HashMap<String, String>,
+    // Scalar `name+=value` — append to existing scalar, or create empty+set.
+    pub scalar_appends: HashMap<String, String>,
+    // Array literal: `arr=(a b c)`.
+    pub array_assigns: HashMap<String, Vec<String>>,
+    // Array append: `arr+=(d e f)`.
+    pub array_appends: HashMap<String, Vec<String>>,
     pub redirs: Vec<Redir>,
     pub cond: Option<Box<ASTNode>>,
     pub body: Option<Box<ASTNode>>,
@@ -218,6 +228,9 @@ impl ASTNode {
             value: String::new(),
             args: Vec::new(),
             assigns: HashMap::new(),
+            scalar_appends: HashMap::new(),
+            array_assigns: HashMap::new(),
+            array_appends: HashMap::new(),
             redirs: Vec::new(),
             cond: None,
             body: None,

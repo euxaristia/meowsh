@@ -76,15 +76,16 @@ fn source_startup_files(login: bool, interactive: bool) {
     if home.is_empty() {
         return;
     }
-    source_file_silent(&format!("{}/.zshenv", home));
+    let home_path = Path::new(&home);
+    source_file_silent(&home_path.join(".zshenv").to_string_lossy());
     if login {
-        source_file_silent(&format!("{}/.zprofile", home));
+        source_file_silent(&home_path.join(".zprofile").to_string_lossy());
     }
     if interactive {
-        source_file_silent(&format!("{}/.zshrc", home));
+        source_file_silent(&home_path.join(".zshrc").to_string_lossy());
     }
     if login && interactive {
-        source_file_silent(&format!("{}/.zlogin", home));
+        source_file_silent(&home_path.join(".zlogin").to_string_lossy());
     }
 }
 

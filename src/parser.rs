@@ -197,6 +197,7 @@ impl<'a> Parser<'a> {
         loop {
             let tok = self.lexer.next_token();
             if tok.token_type == TokenType::Eof {
+                eprintln!("meowsh: syntax error: unexpected end of file in [[ ... ]]");
                 break;
             }
             if tok.value == "]]" {
@@ -254,15 +255,47 @@ impl<'a> Parser<'a> {
 
             if tok.token_type == TokenType::Assignment {
                 if node.args.is_empty() {
-                    if node.assigns.is_empty() {
-                        node.assigns = std::collections::HashMap::new();
-                    }
-                    let parts: Vec<&str> = tok.value.splitn(2, '=').collect();
-                    if parts.len() == 2 {
-                        node.assigns
-                            .insert(parts[0].to_string(), parts[1].to_string());
-                    }
+                    let raw = tok.value.clone();
                     self.lexer.next_token();
+                    let (name, value, is_append) = split_assignment(&raw);
+
+                    // Array literal / append: `name=(...)` or `name+=(...)`.
+                    if value.is_empty()
+                        && self.peek_token().token_type == TokenType::Lparen
+                    {
+                        self.lexer.next_token(); // (
+                        let mut items: Vec<String> = Vec::new();
+                        loop {
+                            let t = self.peek_token();
+                            if t.token_type == TokenType::Rparen
+                                || t.token_type == TokenType::Eof
+                            {
+                                break;
+                            }
+                            if t.token_type == TokenType::Newline
+                                || t.token_type == TokenType::Semi
+                            {
+                                self.lexer.next_token();
+                                continue;
+                            }
+                            items.push(self.lexer.next_token().value);
+                        }
+                        if self.peek_token().token_type == TokenType::Rparen {
+                            self.lexer.next_token();
+                        }
+                        if is_append {
+                            node.array_appends.insert(name, items);
+                        } else {
+                            node.array_assigns.insert(name, items);
+                        }
+                        continue;
+                    }
+
+                    if is_append {
+                        node.scalar_appends.insert(name, value);
+                    } else {
+                        node.assigns.insert(name, value);
+                    }
                     continue;
                 } else {
                     node.args.push(tok.value.clone());
@@ -503,4 +536,16 @@ pub fn parse(line: &str) -> Option<ASTNode> {
     let mut lexer = Lexer::new(line);
     let mut parser = Parser::new(&mut lexer);
     parser.parse()
+}
+
+// Splits an Assignment-token value `name=val` or `name+=val` into
+// (name, val, is_append).
+fn split_assignment(raw: &str) -> (String, String, bool) {
+    if let Some(idx) = raw.find("+=") {
+        return (raw[..idx].to_string(), raw[idx + 2..].to_string(), true);
+    }
+    if let Some(idx) = raw.find('=') {
+        return (raw[..idx].to_string(), raw[idx + 1..].to_string(), false);
+    }
+    (raw.to_string(), String::new(), false)
 }

@@ -1,4 +1,4 @@
-use crate::shell::{var_get, var_get_if_exists, var_set, SHELL};
+use crate::shell::{array_get, var_get, var_get_if_exists, var_set, SHELL};
 use std::process::Command;
 
 pub fn expand_all(s: &str) -> String {
@@ -364,8 +364,29 @@ pub fn expand_variable(s: &str) -> String {
 
 pub fn expand_var_expr(expr: &str) -> String {
     if expr.starts_with('#') && expr.len() > 1 {
-        let val = var_get(&expr[1..]);
-        return val.len().to_string();
+        let inner = &expr[1..];
+        // ${#arr[@]} or ${#arr[*]} — element count.
+        if let Some((name, sub)) = split_subscript(inner) {
+            if matches!(sub, "@" | "*") {
+                if let Some(arr) = array_get(name) {
+                    return arr.len().to_string();
+                }
+            }
+            // ${#arr[N]} — length of nth element.
+            return read_subscript(name, sub).chars().count().to_string();
+        }
+        let val = var_get(inner);
+        return val.chars().count().to_string();
+    }
+
+    // ${arr[subscript]} — subscripted read.
+    if let Some((name, sub)) = split_subscript(expr) {
+        return read_subscript(name, sub);
+    }
+
+    // ${var/old/new} and ${var//old/new} — pattern substitution.
+    if let Some(result) = try_substitution(expr) {
+        return result;
     }
 
     let ops = vec![
@@ -441,6 +462,225 @@ pub fn expand_var_expr(expr: &str) -> String {
     }
 
     var_get(expr)
+}
+
+// Splits `name[subscript]` into (name, subscript) if the expression has the
+// shape `name[...]` with no operator characters in `name`. Returns None if
+// the bracket form isn't present or if `name` would be empty.
+fn split_subscript(expr: &str) -> Option<(&str, &str)> {
+    let open = expr.find('[')?;
+    if !expr.ends_with(']') {
+        return None;
+    }
+    let name = &expr[..open];
+    if name.is_empty() {
+        return None;
+    }
+    if name.contains(|c: char| matches!(c, ':' | '#' | '%' | '/' | '?' | '+' | '-' | '=')) {
+        return None;
+    }
+    let sub = &expr[open + 1..expr.len() - 1];
+    Some((name, sub))
+}
+
+fn read_subscript(name: &str, sub: &str) -> String {
+    let arr = match array_get(name) {
+        Some(a) => a,
+        None => {
+            // Fall back to scalar — `${var[1]}` on a scalar returns the
+            // whole value for [1]/[@]/[*], empty otherwise.
+            let val = var_get(name);
+            return match sub {
+                "@" | "*" | "1" => val,
+                _ => String::new(),
+            };
+        }
+    };
+    if matches!(sub, "@" | "*") {
+        return arr.join(" ");
+    }
+    if let Ok(i) = sub.parse::<isize>() {
+        let len = arr.len() as isize;
+        let idx = if i > 0 {
+            i - 1
+        } else if i < 0 {
+            len + i
+        } else {
+            return String::new();
+        };
+        if idx >= 0 && (idx as usize) < arr.len() {
+            return arr[idx as usize].clone();
+        }
+    }
+    String::new()
+}
+
+// `${var/old/new}` (first match) and `${var//old/new}` (all matches).
+// Pattern is treated as a glob via the `glob` crate. Returns None if the
+// expression doesn't have this shape. Backslash-escaped slashes inside the
+// pattern or replacement are preserved as literal `/`.
+fn try_substitution(expr: &str) -> Option<String> {
+    let first_slash = find_unescaped_slash(expr, 0)?;
+    let name = &expr[..first_slash];
+    if name.is_empty() {
+        return None;
+    }
+    if name.contains(|c: char| matches!(c, ':' | '#' | '%' | '?' | '+' | '-' | '=' | '[')) {
+        return None;
+    }
+    let mut rest_start = first_slash + 1;
+    let mut global = false;
+    if expr[rest_start..].starts_with('/') {
+        global = true;
+        rest_start += 1;
+    }
+    let mut anchor_start = false;
+    let mut anchor_end = false;
+    if expr[rest_start..].starts_with('#') {
+        anchor_start = true;
+        rest_start += 1;
+    } else if expr[rest_start..].starts_with('%') {
+        anchor_end = true;
+        rest_start += 1;
+    }
+    let (pat_raw, repl_raw) = match find_unescaped_slash(expr, rest_start) {
+        Some(i) => (&expr[rest_start..i], &expr[i + 1..]),
+        None => (&expr[rest_start..], ""),
+    };
+    let pat = unescape_slashes(pat_raw);
+    let repl = unescape_slashes(repl_raw);
+    let value = var_get(name);
+    let result = substitute(&value, &pat, &repl, global, anchor_start, anchor_end);
+    Some(result)
+}
+
+fn find_unescaped_slash(s: &str, start: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut i = start;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'/' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn unescape_slashes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(&nc) = chars.peek() {
+                if nc == '/' || nc == '\\' {
+                    chars.next();
+                    out.push(nc);
+                    continue;
+                }
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn substitute(
+    value: &str,
+    pat: &str,
+    repl: &str,
+    global: bool,
+    anchor_start: bool,
+    anchor_end: bool,
+) -> String {
+    if pat.is_empty() {
+        return value.to_string();
+    }
+    let glob_pat = match glob::Pattern::new(pat) {
+        Ok(p) => Some(p),
+        Err(_) => None,
+    };
+    let has_meta = pat.contains(['*', '?', '[']);
+    let matches_at = |s: &str| -> Option<usize> {
+        if !has_meta {
+            // Literal substring match — much faster than per-substring glob.
+            return if s.starts_with(pat) { Some(pat.len()) } else { None };
+        }
+        // Glob path: try increasing lengths starting from `s`.
+        let glob_pat = glob_pat.as_ref()?;
+        let opts = glob::MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: false,
+            require_literal_leading_dot: false,
+        };
+        for end in 0..=s.len() {
+            if let Some(slice) = s.get(..end) {
+                if glob_pat.matches_with(slice, opts) {
+                    return Some(end);
+                }
+            }
+        }
+        None
+    };
+    if anchor_start {
+        if let Some(len) = matches_at(value) {
+            let mut out = String::with_capacity(value.len());
+            out.push_str(repl);
+            out.push_str(&value[len..]);
+            return out;
+        }
+        return value.to_string();
+    }
+    if anchor_end {
+        // Try suffixes from longest to shortest.
+        for start in 0..=value.len() {
+            let suffix = &value[start..];
+            if let Some(len) = matches_at(suffix) {
+                if start + len == value.len() {
+                    let mut out = String::with_capacity(value.len());
+                    out.push_str(&value[..start]);
+                    out.push_str(repl);
+                    return out;
+                }
+            }
+        }
+        return value.to_string();
+    }
+    // Unanchored. Walk byte positions; for literal pattern we can use find.
+    if !has_meta {
+        if global {
+            return value.replace(pat, repl);
+        }
+        return value.replacen(pat, repl, 1);
+    }
+    // Glob unanchored: scan positions.
+    let mut out = String::new();
+    let mut i = 0;
+    while i < value.len() {
+        let suffix = &value[i..];
+        if let Some(len) = matches_at(suffix) {
+            if len == 0 {
+                let c = suffix.chars().next().unwrap();
+                out.push(c);
+                i += c.len_utf8();
+                continue;
+            }
+            out.push_str(repl);
+            i += len;
+            if !global {
+                out.push_str(&value[i..]);
+                return out;
+            }
+        } else {
+            let c = suffix.chars().next().unwrap();
+            out.push(c);
+            i += c.len_utf8();
+        }
+    }
+    out
 }
 
 pub fn expand_glob(s: &str) -> String {

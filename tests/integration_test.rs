@@ -386,6 +386,147 @@ fn test_zshrc_sourced_when_interactive() {
     assert_eq!(stdout.trim(), "zshrc_value");
 }
 
+// ---- Phase 2A: arrays + parameter substitution + stubs ------------------
+
+#[test]
+fn test_array_assign_and_join() {
+    let (status, stdout, _) = run_script(r#"arr=(foo bar baz); echo "$arr""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "foo bar baz");
+}
+
+#[test]
+fn test_array_index_one_based() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(alpha beta gamma); echo "${arr[1]} ${arr[3]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "alpha gamma");
+}
+
+#[test]
+fn test_array_at_splat() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(a b c); echo "${arr[@]}"; echo "${arr[*]}""#);
+    assert_eq!(status, 0);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+    assert_eq!(lines, vec!["a b c", "a b c"]);
+}
+
+#[test]
+fn test_array_length() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(one two three four); echo "${#arr[@]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "4");
+}
+
+#[test]
+fn test_array_append() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(a b); arr+=(c d); echo "${arr[@]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "a b c d");
+}
+
+#[test]
+fn test_array_with_var_expansion_in_literal() {
+    let (status, stdout, _) =
+        run_script(r#"x=hello; arr=($x world); echo "${arr[1]}-${arr[2]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "hello-world");
+}
+
+#[test]
+fn test_array_negative_index() {
+    let (status, stdout, _) =
+        run_script(r#"arr=(red green blue); echo "${arr[-1]} ${arr[-2]}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "blue green");
+}
+
+#[test]
+fn test_subst_first_match() {
+    let (status, stdout, _) =
+        run_script(r#"v=aXbXc; echo "${v/X/_}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "a_bXc");
+}
+
+#[test]
+fn test_subst_global() {
+    let (status, stdout, _) =
+        run_script(r#"v=aXbXc; echo "${v//X/_}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "a_b_c");
+}
+
+#[test]
+fn test_subst_path_separator() {
+    let (status, stdout, _) =
+        run_script(r#"p=/usr/local/bin; echo "${p//\//.}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), ".usr.local.bin");
+}
+
+#[test]
+fn test_subst_anchor_start() {
+    let (status, stdout, _) =
+        run_script(r#"v=foofoo; echo "${v/#foo/bar}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "barfoo");
+}
+
+#[test]
+fn test_subst_anchor_end() {
+    let (status, stdout, _) =
+        run_script(r#"v=foofoo; echo "${v/%foo/bar}""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "foobar");
+}
+
+#[test]
+fn test_scalar_append() {
+    let (status, stdout, _) =
+        run_script(r#"x=hello; x+=" world"; echo "$x""#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "hello world");
+}
+
+#[test]
+fn test_zstyle_stub_no_error() {
+    let (status, stdout, _) =
+        run_script(r#"zstyle ':completion:*' menu select; echo done"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "done");
+}
+
+#[test]
+fn test_compsys_stubs_no_error() {
+    let (status, stdout, _) = run_script(
+        r#"autoload -Uz compinit; compinit; compdef _gnu_generic ls; bindkey -e; echo ok"#,
+    );
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "ok");
+}
+
+#[test]
+fn test_add_zsh_hook_stub_no_error() {
+    let (status, stdout, _) =
+        run_script(r#"add-zsh-hook precmd my_hook; echo done"#);
+    assert_eq!(status, 0);
+    assert_eq!(stdout.trim(), "done");
+}
+
+#[test]
+fn test_for_loop_over_array() {
+    let (status, stdout, _) = run_script(
+        r#"arr=(a b c); for x in "${arr[@]}"; do echo "got $x"; done"#,
+    );
+    assert_eq!(status, 0);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+    assert_eq!(lines, vec!["got a", "got b", "got c"]);
+}
+
 #[test]
 fn test_zshrc_skipped_when_noninteractive() {
     let temp_dir = TempDir::new().unwrap();
